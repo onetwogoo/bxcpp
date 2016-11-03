@@ -16,7 +16,9 @@
  */
 package org.anarres.cpp;
 
-/* pp */ class State {
+import java.io.Serializable;
+
+/* pp */ class State implements Serializable {
 
     boolean parent;
     boolean active;

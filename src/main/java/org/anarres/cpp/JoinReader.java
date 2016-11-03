@@ -19,6 +19,7 @@ package org.anarres.cpp;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Serializable;
 
 /* pp */ class JoinReader /* extends Reader */ implements Closeable {
 

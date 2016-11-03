@@ -21,6 +21,8 @@ import javax.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
+
 /**
  * A handler for preprocessor events, primarily errors and warnings.
  *
@@ -28,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * error and warning events will throw an exception. Installing a
  * listener allows more intelligent handling of these events.
  */
-public class DefaultPreprocessorListener implements PreprocessorListener {
+public class DefaultPreprocessorListener implements PreprocessorListener, Serializable {
 
     private static final Logger LOG = LoggerFactory.getLogger(DefaultPreprocessorListener.class);
 

@@ -18,11 +18,12 @@ package org.anarres.cpp;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 
 /**
  * A virtual filesystem implementation using java.io.
  */
-public class JavaFileSystem implements VirtualFileSystem {
+public class JavaFileSystem implements VirtualFileSystem, Serializable {
 
     @Override
     public VirtualFile getFile(String path) {
