@@ -16,6 +16,7 @@
  */
 package org.anarres.cpp;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -27,9 +28,9 @@ import java.util.List;
  * for replacement. The replacement token stream may contain the
  * extra tokens {@link Token#M_ARG} and {@link Token#M_STRING}.
  */
-public class Macro {
+public class Macro implements Serializable {
 
-    private Source source;
+    //private Source source;
     private String name;
     /* It's an explicit decision to keep these around here. We don't
      * need to; the argument token type is M_ARG and the value
@@ -40,7 +41,7 @@ public class Macro {
     private List<Token> tokens;
 
     public Macro(Source source, String name) {
-        this.source = source;
+        //this.source = source;
         this.name = name;
         this.args = null;
         this.variadic = false;
@@ -54,9 +55,9 @@ public class Macro {
     /**
      * Sets the Source from which this macro was parsed.
      */
-    public void setSource(Source s) {
-        this.source = s;
-    }
+    //public void setSource(Source s) {
+    //    this.source = s;
+    //}
 
     /**
      * Returns the Source from which this macro was parsed.
@@ -64,9 +65,9 @@ public class Macro {
      * This method may return null if the macro was not parsed
      * from a regular file.
      */
-    public Source getSource() {
-        return source;
-    }
+    //public Source getSource() {
+//        return source;
+//    }
 
     /**
      * Returns the name of this macro.

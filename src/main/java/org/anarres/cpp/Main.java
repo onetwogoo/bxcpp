@@ -17,14 +17,20 @@
 package org.anarres.cpp;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.PrintStream;
+import java.io.StringReader;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Scanner;
 import javax.annotation.Nonnull;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,11 +53,36 @@ public class Main {
         return buf;
     }
 
-    public static void main(String[] args) throws Exception {
-        (new Main()).run(args);
+    private static void evalRoot(File baseDirectory) throws Exception{
+        for (File file : baseDirectory.listFiles()) {
+            if (file.isDirectory()) {
+                evalRoot(file);
+            } else if (file.getName().endsWith(".c") || file.getName().endsWith(".cpp")){
+                String filename = file.getAbsolutePath();
+                String jcppResult = (new Main()).run(new String[]{filename, "-I", "/Users/Shared/linux-4.8.4/include",
+                        "-I", "/Users/shared/linux-4.8.4/arch/x86/include",
+                        "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/8.0.0/include",
+                        "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include",
+                        "-I", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/usr/include"});
+                IOUtils.write(jcppResult, new FileOutputStream(filename + ".jcpp"));
+                Process p = Runtime.getRuntime().exec("gcc -E -CC -P -undef -I/Users/shared/linux-4.8.4//include -I/Users/shared/linux-4.8.4/arch/x86/include " + filename);
+                String gccResult = IOUtils.toString(p.getInputStream());
+                IOUtils.write(gccResult, new FileOutputStream(filename + ".gcc"));
+                Process diff = Runtime.getRuntime().exec("diff -ub " + filename + ".gcc " + filename + ".jcpp");
+                IOUtils.copy(diff.getInputStream(), new FileOutputStream(filename + ".diff"));
+            }
+        }
     }
 
-    public void run(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
+        String path = "/Users/shared/linux-4.8.4/test";
+        File baseDirectory = new File(path);
+        evalRoot(baseDirectory);
+        System.out.println("done.");
+
+    }
+
+    public String run(String[] args) throws Exception {
 
         OptionParser parser = new OptionParser();
         OptionSpec<?> helpOption = parser.accepts("help",
@@ -87,13 +118,15 @@ public class Main {
 
         if (options.has(helpOption)) {
             parser.printHelpOn(System.out);
-            return;
+            return "";
         }
 
         Preprocessor pp = new Preprocessor();
         pp.addFeature(Feature.DIGRAPHS);
         pp.addFeature(Feature.TRIGRAPHS);
         //pp.addFeature(Feature.LINEMARKERS);
+        pp.addFeature(Feature.KEEPALLCOMMENTS);
+        pp.addFeature(Feature.KEEPCOMMENTS);
         pp.addWarning(Warning.IMPORT);
         pp.setListener(new DefaultPreprocessorListener());
         pp.addMacro("__JCPP__");
@@ -141,8 +174,10 @@ public class Main {
         if (inputs.isEmpty()) {
             pp.addInput(new InputLexerSource(System.in));
         } else {
-            for (File input : inputs)
+            for (File input : inputs) {
+                System.out.println(input.getName());
                 pp.addInput(new FileLexerSource(input));
+            }
         }
 
         if (pp.getFeature(Feature.DEBUG)) {
@@ -155,6 +190,10 @@ public class Main {
             LOG.info("End of search list.");
         }
 
+        StringBuilder sb = new StringBuilder();
+        StringBuilder test_sb = new StringBuilder();
+        int step = 0;
+        Preprocessor.Environment state = null;
         try {
             for (;;) {
                 Token tok = pp.token();
@@ -162,8 +201,23 @@ public class Main {
                     break;
                 if (tok.getType() == Token.EOF)
                     break;
-                System.out.print(tok.getText());
+                sb.append(tok.getText());
+                pp.updateCurrentState(pp.getCurrentState());
             }
+//            for (;;) {
+//                Token tok = pp.token();
+//                if (tok == null)
+//                    break;
+//                if (tok.getType() == Token.EOF)
+//                    break;
+//                test_sb.append(tok.getText());
+//            }
+//            if (sb.toString().compareToIgnoreCase(test_sb.toString()) != 0) {
+//                System.out.println(sb.toString());
+//                //System.out.println(test_sb.toString());
+//            } else {
+//                System.out.println("OK");
+//            }
         } catch (Exception e) {
             StringBuilder buf = new StringBuilder("Preprocessor failed:\n");
             Source s = pp.getSource();
@@ -173,14 +227,15 @@ public class Main {
             }
             LOG.error(buf.toString(), e);
         }
-
+        System.out.println(sb.toString());
+        return sb.toString();
     }
 
     private static void version(@Nonnull PrintStream out) {
-        BuildMetadata metadata = BuildMetadata.getInstance();
-        out.println("Anarres Java C Preprocessor version " + metadata.getVersion() + " change-id " + metadata.getChangeId());
-        out.println("Copyright (C) 2007-2015 Shevek (http://www.anarres.org/).");
-        out.println("This is free software; see the source for copying conditions.  There is NO");
-        out.println("warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.");
+//        BuildMetadata metadata = BuildMetadata.getInstance();
+//        out.println("Anarres Java C Preprocessor version " + metadata.getVersion() + " change-id " + metadata.getChangeId());
+//        out.println("Copyright (C) 2007-2015 Shevek (http://www.anarres.org/).");
+//        out.println("This is free software; see the source for copying conditions.  There is NO");
+//        out.println("warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.");
     }
 }

@@ -18,13 +18,14 @@ package org.anarres.cpp;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import java.io.Serializable;
 
 /**
  * A Preprocessor token.
  *
  * @see Preprocessor
  */
-public final class Token {
+public final class Token implements Serializable {
 
     // public static final int	EOF        = -1;
     private final int type;

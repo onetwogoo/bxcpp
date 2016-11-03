@@ -16,9 +16,7 @@
  */
 package org.anarres.cpp;
 
-import java.io.Closeable;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -33,6 +31,8 @@ import java.util.Stack;
 import java.util.TreeMap;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+
+import com.sun.tools.doclint.Env;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.anarres.cpp.PreprocessorCommand.*;
@@ -76,6 +76,13 @@ import static org.anarres.cpp.Token.*;
  */
 public class Preprocessor implements Closeable {
 
+    public class Environment {
+        private byte[] env;
+        Environment(byte[] env) {
+            this.env = env;
+        }
+    }
+
     private static final Logger LOG = LoggerFactory.getLogger(Preprocessor.class);
 
     private static final Source INTERNAL = new Source() {
@@ -103,14 +110,14 @@ public class Preprocessor implements Closeable {
     private final List<Source> inputs;
 
     /* The fundamental engine. */
-    private final Map<String, Macro> macros;
-    private final Stack<State> states;
+    private Map<String, Macro> macros;
+    private Stack<State> states;
     private Source source;
 
     /* Miscellaneous support. */
     private int counter;
-    private final Set<String> onceseenpaths = new HashSet<String>();
-    private final List<VirtualFile> includes = new ArrayList<VirtualFile>();
+    private Set<String> onceseenpaths = new HashSet<String>();
+    //private final List<VirtualFile> includes = new ArrayList<VirtualFile>();
 
     /* Support junk to make it work like cpp */
     private List<String> quoteincludepath;	/* -iquote */
@@ -118,8 +125,8 @@ public class Preprocessor implements Closeable {
     private List<String> sysincludepath;		/* -I */
 
     private List<String> frameworkspath;
-    private final Set<Feature> features;
-    private final Set<Warning> warnings;
+    private Set<Feature> features;
+    private Set<Warning> warnings;
     private VirtualFileSystem filesystem;
     private PreprocessorListener listener;
     public ActionCollector collector = new ActionCollector();
@@ -144,6 +151,34 @@ public class Preprocessor implements Closeable {
         this.warnings = EnumSet.noneOf(Warning.class);
         this.filesystem = new JavaFileSystem();
         this.listener = null;
+    }
+
+    Environment getCurrentState() {
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(1024 * 1024);
+            ObjectOutputStream oos = new ObjectOutputStream(baos);
+            oos.writeObject(macros);
+            oos.writeObject(states);
+            oos.writeObject(counter);
+            oos.writeObject(onceseenpaths);
+            oos.flush();
+            return new Environment(baos.toByteArray());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    void updateCurrentState(Environment e) {
+        try {
+            ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(e.env));
+            macros = (Map<String, Macro>)ois.readObject();
+            states = (Stack<State>)ois.readObject();
+            counter = (Integer)ois.readObject();
+            onceseenpaths = (Set<String>)ois.readObject();
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
     }
 
     public Preprocessor(@Nonnull Source initial) {
@@ -488,10 +523,10 @@ public class Preprocessor implements Closeable {
      * This does not include any {@link Source} provided to the constructor
      * or {@link #addInput(java.io.File)} or {@link #addInput(Source)}.
      */
-    @Nonnull
-    public List<? extends VirtualFile> getIncludes() {
-        return includes;
-    }
+//    @Nonnull
+//    public List<? extends VirtualFile> getIncludes() {
+//        return includes;
+//    }
 
     /* States */
     private void push_state() {
@@ -1158,9 +1193,9 @@ public class Preprocessor implements Closeable {
             return false;
         if (getFeature(Feature.DEBUG))
             LOG.debug("pp: including " + file);
-        includes.add(file);
         FileLexerSource fileLexerSource = (FileLexerSource)file.getSource();
         fileLexerSource.producedTokens =producedTokens;
+
         push_source(file.getSource(), true);
         return true;
     }
