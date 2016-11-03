@@ -22,6 +22,8 @@ import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
 import javax.annotation.Nonnull;
 
 /**
@@ -96,5 +98,16 @@ public class FileLexerSource extends InputLexerSource {
     @Override
     public String toString() {
         return "file " + getPath();
+    }
+
+    public List<Token> producedTokens;
+
+    @Override
+    public Token token() throws IOException, LexerException {
+        Token token = super.token();
+        if (producedTokens != null) {
+            producedTokens.add(token);
+        }
+        return token;
     }
 }

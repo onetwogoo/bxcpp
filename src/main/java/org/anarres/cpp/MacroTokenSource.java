@@ -17,10 +17,14 @@
 package org.anarres.cpp;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
+
+import jdk.nashorn.internal.parser.Lexer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.anarres.cpp.Token.*;
@@ -36,11 +40,15 @@ import static org.anarres.cpp.Token.*;
     private final List<Argument> args;	/* { unexpanded, expanded } */
 
     private Iterator<Token> arg;	/* "current expansion" */
+    private boolean insideArgument;
 
-    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args) {
+    private List<MapSeg> mapping;
+
+    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping) {
         this.macro = m;
         this.tokens = m.getTokens().iterator();
         this.args = args;
+        this.mapping = mapping;
         this.arg = null;
     }
 
@@ -188,6 +196,14 @@ import static org.anarres.cpp.Token.*;
     public Token token()
             throws IOException,
             LexerException {
+        Token token = _token();
+        if (!insideArgument && token.getType() != Token.EOF) {
+            mapping.add(new New(Collections.singletonList(token)));
+        }
+        return token;
+    }
+
+    private Token _token() throws IOException,LexerException {
         for (;;) {
             /* Deal with lexed tokens first. */
 
@@ -200,6 +216,7 @@ import static org.anarres.cpp.Token.*;
                     return tok;
                 }
                 arg = null;
+                insideArgument = false;
             }
 
             if (!tokens.hasNext())
@@ -216,7 +233,10 @@ import static org.anarres.cpp.Token.*;
                     /* Expand the arg. */
                     idx = ((Integer) tok.getValue()).intValue();
                     // System.out.println("Pushing arg " + args.get(idx));
-                    arg = args.get(idx).expansion();
+                    Argument argument = args.get(idx);
+                    mapping.add(new Sub(argument.indicies, argument.actions));
+                    insideArgument = true;
+                    arg = argument.expansion();
                     break;
                 case M_PASTE:
                     paste(tok);
@@ -236,5 +256,12 @@ import static org.anarres.cpp.Token.*;
         if (parent != null)
             buf.append(" in ").append(String.valueOf(parent));
         return buf.toString();
+    }
+
+    @Override
+    public Set<String> disabledMacros() {
+        Set<String> macros =  super.disabledMacros();
+        macros.add(macro.getName());
+        return macros;
     }
 }

@@ -24,10 +24,12 @@ stdproject {
 dependencies {
 	compile 'com.google.code.findbugs:annotations:2.0.3'
 	compile 'org.slf4j:slf4j-api:1.7.12'
+	compile 'org.slf4j:slf4j-simple:1.7.12'
 
 	compile 'net.sf.jopt-simple:jopt-simple:4.7'
 	compile 'org.apache.ant:ant:1.7.0'
 	compile 'com.github.zafarkhaja:java-semver:0.8.0'
+	compile group: 'com.google.code.gson', name: 'gson', version: '2.3.1'
 
 	testCompile 'com.google.guava:guava:18.0'
 }

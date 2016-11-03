@@ -18,7 +18,7 @@ package org.anarres.cpp;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Iterator;
+import java.util.*;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
@@ -293,4 +293,7 @@ public abstract class Source implements Iterable<Token>, Closeable {
             throws IOException {
     }
 
+    public Set<String> disabledMacros() {
+        return new LinkedHashSet<String>();
+    }
 }

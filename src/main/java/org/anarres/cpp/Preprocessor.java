@@ -122,6 +122,7 @@ public class Preprocessor implements Closeable {
     private final Set<Warning> warnings;
     private VirtualFileSystem filesystem;
     private PreprocessorListener listener;
+    public ActionCollector collector = new ActionCollector();
 
     public Preprocessor() {
         this.inputs = new ArrayList<Source>();
@@ -623,6 +624,7 @@ public class Preprocessor implements Closeable {
             source_token = null;
             if (getFeature(Feature.DEBUG))
                 LOG.debug("Returning unget token " + tok);
+            collector.getToken(tok, getSource());
             return tok;
         }
 
@@ -632,6 +634,7 @@ public class Preprocessor implements Closeable {
                 Token t = next_source();
                 if (t.getType() == P_LINE && !getFeature(Feature.LINEMARKERS))
                     continue;
+                collector.getToken(t, getSource());
                 return t;
             }
             Token tok = s.token();
@@ -639,12 +642,15 @@ public class Preprocessor implements Closeable {
             if (tok.getType() == EOF && s.isAutopop()) {
                 // System.out.println("Autopop " + s);
                 Token mark = pop_source(true);
-                if (mark != null)
+                if (mark != null) {
+                    collector.getToken(mark, getSource());
                     return mark;
+                }
                 continue;
             }
             if (getFeature(Feature.DEBUG))
                 LOG.debug("Returning fresh token " + tok);
+            collector.getToken(tok, getSource());
             return tok;
         }
     }
@@ -652,6 +658,7 @@ public class Preprocessor implements Closeable {
     private void source_untoken(Token tok) {
         if (this.source_token != null)
             throw new IllegalStateException("Cannot return two tokens");
+        collector.ungetToken(tok);
         this.source_token = tok;
     }
 
@@ -751,13 +758,13 @@ public class Preprocessor implements Closeable {
                                 if (m.isVariadic()
                                         && /* We are building the last arg. */ args.size() == m.getArgs() - 1) {
                                     /* Just add the comma. */
-                                    arg.addToken(tok);
+                                    arg.addToken(tok, collector.numToken() - 1);
                                 } else {
                                     args.add(arg);
                                     arg = new Argument();
                                 }
                             } else {
-                                arg.addToken(tok);
+                                arg.addToken(tok, collector.numToken() - 1);
                             }
                             space = false;
                             break;
@@ -767,13 +774,13 @@ public class Preprocessor implements Closeable {
                                 break ARGS;
                             } else {
                                 depth--;
-                                arg.addToken(tok);
+                                arg.addToken(tok, collector.numToken() - 1);
                             }
                             space = false;
                             break;
                         case '(':
                             depth++;
-                            arg.addToken(tok);
+                            arg.addToken(tok, collector.numToken() - 1);
                             space = false;
                             break;
 
@@ -789,8 +796,8 @@ public class Preprocessor implements Closeable {
                             /* Do not put space on the beginning of
                              * an argument token. */
                             if (space && !arg.isEmpty())
-                                arg.addToken(Token.space);
-                            arg.addToken(tok);
+                                arg.addToken(Token.space, collector.numToken() - 2);
+                            arg.addToken(tok, collector.numToken() - 1);
                             space = false;
                             break;
 
@@ -826,7 +833,11 @@ public class Preprocessor implements Closeable {
                 }
 
                 for (Argument a : args) {
+                    ActionCollector currentCollector =collector;
+                    collector = new ActionCollector();
                     a.expand(this);
+                    a.actions = collector.actions;
+                    collector = currentCollector;
                 }
 
                 // System.out.println("Macro " + m + " args " + args);
@@ -841,12 +852,12 @@ public class Preprocessor implements Closeable {
         }
 
         if (m == __LINE__) {
-            push_source(new FixedTokenSource(
-                    new Token[]{new Token(NUMBER,
-                                orig.getLine(), orig.getColumn(),
-                                Integer.toString(orig.getLine()),
-                                new NumericValue(10, Integer.toString(orig.getLine())))}
-            ), true);
+            Token[] tokens = new Token[]{new Token(NUMBER,
+                    orig.getLine(), orig.getColumn(),
+                    Integer.toString(orig.getLine()),
+                    new NumericValue(10, Integer.toString(orig.getLine())))};
+            collector.replaceWith(Arrays.asList(tokens));
+            push_source(new FixedTokenSource(tokens), true);
         } else if (m == __FILE__) {
             StringBuilder buf = new StringBuilder("\"");
             String name = getSource().getName();
@@ -868,23 +879,27 @@ public class Preprocessor implements Closeable {
             }
             buf.append("\"");
             String text = buf.toString();
-            push_source(new FixedTokenSource(
-                    new Token[]{new Token(STRING,
-                                orig.getLine(), orig.getColumn(),
-                                text, text)}
-            ), true);
+
+            Token[] tokens = new Token[]{new Token(STRING,
+                    orig.getLine(), orig.getColumn(),
+                    text, text)};
+            collector.replaceWith(Arrays.asList(tokens));
+            push_source(new FixedTokenSource(tokens), true);
         } else if (m == __COUNTER__) {
             /* This could equivalently have been done by adding
              * a special Macro subclass which overrides getTokens(). */
             int value = this.counter++;
-            push_source(new FixedTokenSource(
-                    new Token[]{new Token(NUMBER,
-                                orig.getLine(), orig.getColumn(),
-                                Integer.toString(value),
-                                new NumericValue(10, Integer.toString(value)))}
-            ), true);
+            Token[] tokens = new Token[]{new Token(NUMBER,
+                    orig.getLine(), orig.getColumn(),
+                    Integer.toString(value),
+                    new NumericValue(10, Integer.toString(value)))};
+            collector.replaceWith(Arrays.asList(tokens));
+            push_source(new FixedTokenSource(tokens), true);
         } else {
-            push_source(new MacroTokenSource(m, args), true);
+            List<MapSeg> mapping = new ArrayList<MapSeg>();
+            MacroTokenSource macroTokenSource = new MacroTokenSource(m, args, mapping);
+            collector.replaceWith(mapping, macroTokenSource.disabledMacros());
+            push_source(macroTokenSource, true);
         }
 
         return true;
@@ -1136,7 +1151,7 @@ public class Preprocessor implements Closeable {
      * @return true if the file was successfully included, false otherwise.
      * @throws IOException if an I/O error occurs.
      */
-    protected boolean include(@Nonnull VirtualFile file)
+    protected boolean include(@Nonnull VirtualFile file, List<Token> producedTokens)
             throws IOException {
         // System.out.println("Try to include " + ((File)file).getAbsolutePath());
         if (!file.isFile())
@@ -1144,6 +1159,8 @@ public class Preprocessor implements Closeable {
         if (getFeature(Feature.DEBUG))
             LOG.debug("pp: including " + file);
         includes.add(file);
+        FileLexerSource fileLexerSource = (FileLexerSource)file.getSource();
+        fileLexerSource.producedTokens =producedTokens;
         push_source(file.getSource(), true);
         return true;
     }
@@ -1156,11 +1173,11 @@ public class Preprocessor implements Closeable {
      * @return true if the file was successfully included, false otherwise.
      * @throws IOException if an I/O error occurs.
      */
-    protected boolean include(@Nonnull Iterable<String> path, @Nonnull String name)
+    protected boolean include(@Nonnull Iterable<String> path, @Nonnull String name, List<Token> producedTokens)
             throws IOException {
         for (String dir : path) {
             VirtualFile file = getFileSystem().getFile(dir, name);
-            if (include(file))
+            if (include(file, producedTokens))
                 return true;
         }
         return false;
@@ -1174,12 +1191,12 @@ public class Preprocessor implements Closeable {
      */
     private void include(
             @CheckForNull String parent, int line,
-            @Nonnull String name, boolean quoted, boolean next)
+            @Nonnull String name, boolean quoted, boolean next, List<Token> producedTokens)
             throws IOException,
             LexerException {
         if (name.startsWith("/")) {
             VirtualFile file = filesystem.getFile(name);
-            if (include(file))
+            if (include(file,producedTokens))
                 return;
             StringBuilder buf = new StringBuilder();
             buf.append("File not found: ").append(name);
@@ -1195,10 +1212,10 @@ public class Preprocessor implements Closeable {
             }
             if (pdir != null) {
                 VirtualFile ifile = pdir.getChildFile(name);
-                if (include(ifile))
+                if (include(ifile,producedTokens))
                     return;
             }
-            if (include(quoteincludepath, name))
+            if (include(quoteincludepath, name,producedTokens))
                 return;
         } else {
             int idx = name.indexOf('/');
@@ -1206,12 +1223,12 @@ public class Preprocessor implements Closeable {
                 String frameworkName = name.substring(0, idx);
                 String headerName = name.substring(idx + 1);
                 String headerPath = frameworkName + ".framework/Headers/" + headerName;
-                if (include(frameworkspath, headerPath))
+                if (include(frameworkspath, headerPath,producedTokens))
                     return;
             }
         }
 
-        if (include(sysincludepath, name))
+        if (include(sysincludepath, name,producedTokens))
             return;
 
         StringBuilder buf = new StringBuilder();
@@ -1256,7 +1273,9 @@ public class Preprocessor implements Closeable {
                         default:
                             warning(tok,
                                     "Unexpected token on #" + "include line");
-                            return source_skipline(false);
+                            Token ret = source_skipline(false);
+                            collector.skipLast();
+                            return ret;
                     }
                 }
                 name = buf.toString();
@@ -1271,20 +1290,26 @@ public class Preprocessor implements Closeable {
                 switch (tok.getType()) {
                     case NL:
                     case EOF:
+                        collector.skipLast();
                         return tok;
                     default:
                         /* Only if not a NL or EOF already. */
-                        return source_skipline(false);
+                        Token ret = source_skipline(false);
+                        collector.skipLast();
+                        return ret;
                 }
             }
 
             /* Do the inclusion. */
-            include(source.getPath(), tok.getLine(), name, quoted, next);
+            List<Token> producedTokens = new ArrayList<Token>();
+            include(source.getPath(), tok.getLine(), name, quoted, next, producedTokens);
+            collector.replaceWith(producedTokens);
 
             /* 'tok' is the 'nl' after the include. We use it after the
              * #line directive. */
             if (getFeature(Feature.LINEMARKERS))
                 return line_token(1, source.getName(), " 1");
+            producedTokens.add(tok);
             return tok;
         } finally {
             lexer.setInclude(false);
@@ -1787,14 +1812,18 @@ public class Preprocessor implements Closeable {
                         /* The preprocessor has to take action here. */
                         break;
                     case WHITESPACE:
+                        collector.skipLast();
                         return tok;
                     case CCOMMENT:
                     case CPPCOMMENT:
                         // Patch up to preserve whitespace.
-                        if (getFeature(Feature.KEEPALLCOMMENTS))
+                        if (getFeature(Feature.KEEPALLCOMMENTS)) {
+                            collector.skipLast();
                             return tok;
-                        if (!isActive())
+                        }
+                        if (!isActive()) {
                             return toWhitespace(tok);
+                        }
                         if (getFeature(Feature.KEEPCOMMENTS))
                             return tok;
                         return toWhitespace(tok);
@@ -1815,11 +1844,9 @@ public class Preprocessor implements Closeable {
 
                 case WHITESPACE:
                 case NL:
-                    return tok;
 
                 case CCOMMENT:
                 case CPPCOMMENT:
-                    return tok;
 
                 case '!':
                 case '%':
@@ -1880,29 +1907,31 @@ public class Preprocessor implements Closeable {
                 case STRING:
                 case SQSTRING:
                 case XOR_EQ:
-                    return tok;
 
                 case NUMBER:
+                    collector.skipLast();
                     return tok;
 
                 case IDENTIFIER:
                     Macro m = getMacro(tok.getText());
-                    if (m == null)
+                    if (m == null || source.isExpanding(m) || !macro(m, tok)) {
+                        collector.skipLast();
                         return tok;
-                    if (source.isExpanding(m))
-                        return tok;
-                    if (macro(m, tok))
-                        break;
-                    return tok;
+                    }
+                    break;
 
                 case P_LINE:
-                    if (getFeature(Feature.LINEMARKERS))
+                    if (getFeature(Feature.LINEMARKERS)) {
+                        collector.skipLast();
                         return tok;
+                    }
+                    collector.delete();
                     break;
 
                 case INVALID:
                     if (getFeature(Feature.CSYNTAX))
                         error(tok, String.valueOf(tok.getValue()));
+                    collector.skipLast();
                     return tok;
 
                 default:
@@ -1914,6 +1943,7 @@ public class Preprocessor implements Closeable {
                     // (new Exception("here")).printStackTrace();
                     switch (tok.getType()) {
                         case NL:
+                            collector.delete();
                             break LEX;	/* Some code has #\n */
 
                         case IDENTIFIER:
@@ -1922,172 +1952,242 @@ public class Preprocessor implements Closeable {
                             error(tok,
                                     "Preprocessor directive not a word "
                                     + tok.getText());
-                            return source_skipline(false);
+                            Token ret = source_skipline(false);
+                            collector.skipLast();
+                            return ret;
                     }
                     PreprocessorCommand ppcmd = PreprocessorCommand.forText(tok.getText());
                     if (ppcmd == null) {
                         error(tok,
                                 "Unknown preprocessor directive "
                                 + tok.getText());
-                        return source_skipline(false);
+                        Token ret = source_skipline(false);
+                        collector.skipLast();
+                        return ret;
                     }
 
                     PP:
                     switch (ppcmd) {
 
                         case PP_DEFINE:
-                            if (!isActive())
-                                return source_skipline(false);
-                            else
-                                return define();
-                        // break;
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            } else {
+                                Token ret = define();
+                                collector.skipLast();
+                                return ret;
+                            }
+                            // break;
 
                         case PP_UNDEF:
-                            if (!isActive())
-                                return source_skipline(false);
-                            else
-                                return undef();
-                        // break;
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            } else {
+                                Token ret = undef();
+                                collector.skipLast();
+                                return ret;
+                            }
+                            // break;
 
                         case PP_INCLUDE:
-                            if (!isActive())
-                                return source_skipline(false);
-                            else
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            } else
                                 return include(false);
-                        // break;
+                            // break;
                         case PP_INCLUDE_NEXT:
-                            if (!isActive())
-                                return source_skipline(false);
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            }
                             if (!getFeature(Feature.INCLUDENEXT)) {
                                 error(tok,
                                         "Directive include_next not enabled"
                                 );
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             }
                             return include(true);
                         // break;
 
                         case PP_WARNING:
                         case PP_ERROR:
-                            if (!isActive())
-                                return source_skipline(false);
-                            else
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            } else
                                 error(tok, ppcmd == PP_ERROR);
+                            collector.delete();
                             break;
 
                         case PP_IF:
                             push_state();
                             if (!isActive()) {
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             }
                             expr_token = null;
                             states.peek().setActive(expr(0) != 0);
                             tok = expr_token();	/* unget */
 
-                            if (tok.getType() == NL)
+                            if (tok.getType() == NL) {
+                                collector.skipLast();
                                 return tok;
-                            return source_skipline(true);
-                        // break;
+                            } else {
+                                Token ret = source_skipline(true);
+                                collector.skipLast();
+                                return ret;
+                            }
+                            // break;
 
                         case PP_ELIF:
                             State state = states.peek();
                             if (false) {
-                                /* Check for 'if' */;
+                                /* Check for 'if' */
+                                ;
                             } else if (state.sawElse()) {
                                 error(tok,
                                         "#elif after #" + "else");
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else if (!state.isParentActive()) {
                                 /* Nested in skipped 'if' */
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else if (state.isActive()) {
                                 /* The 'if' part got executed. */
                                 state.setParentActive(false);
                                 /* This is like # else # if but with
                                  * only one # end. */
                                 state.setActive(false);
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else {
                                 expr_token = null;
                                 state.setActive(expr(0) != 0);
                                 tok = expr_token();	/* unget */
 
-                                if (tok.getType() == NL)
+                                if (tok.getType() == NL) {
+                                    collector.skipLast();
                                     return tok;
-                                return source_skipline(true);
+                                }
+                                Token ret = source_skipline(true);
+                                collector.skipLast();
+                                return ret;
                             }
-                        // break;
+                            // break;
 
                         case PP_ELSE:
                             state = states.peek();
                             if (false)
-								/* Check for 'if' */ ; else if (state.sawElse()) {
+								/* Check for 'if' */ ;
+                            else if (state.sawElse()) {
                                 error(tok,
                                         "#" + "else after #" + "else");
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else {
                                 state.setSawElse();
                                 state.setActive(!state.isActive());
-                                return source_skipline(warnings.contains(Warning.ENDIF_LABELS));
+                                Token ret = source_skipline(warnings.contains(Warning.ENDIF_LABELS));
+                                collector.skipLast();
+                                return ret;
                             }
-                        // break;
+                            // break;
 
                         case PP_IFDEF:
                             push_state();
                             if (!isActive()) {
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else {
                                 tok = source_token_nonwhite();
                                 // System.out.println("ifdef " + tok);
                                 if (tok.getType() != IDENTIFIER) {
                                     error(tok,
                                             "Expected identifier, not "
-                                            + tok.getText());
-                                    return source_skipline(false);
+                                                    + tok.getText());
+                                    Token ret = source_skipline(false);
+                                    collector.skipLast();
+                                    return ret;
                                 } else {
                                     String text = tok.getText();
                                     boolean exists
                                             = macros.containsKey(text);
                                     states.peek().setActive(exists);
-                                    return source_skipline(true);
+                                    Token ret = source_skipline(true);
+                                    collector.skipLast();
+                                    return ret;
                                 }
                             }
-                        // break;
+                            // break;
 
                         case PP_IFNDEF:
                             push_state();
                             if (!isActive()) {
-                                return source_skipline(false);
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
                             } else {
                                 tok = source_token_nonwhite();
                                 if (tok.getType() != IDENTIFIER) {
                                     error(tok,
                                             "Expected identifier, not "
-                                            + tok.getText());
-                                    return source_skipline(false);
+                                                    + tok.getText());
+                                    Token ret = source_skipline(false);
+                                    collector.skipLast();
+                                    return ret;
                                 } else {
                                     String text = tok.getText();
                                     boolean exists
                                             = macros.containsKey(text);
                                     states.peek().setActive(!exists);
-                                    return source_skipline(true);
+                                    Token ret = source_skipline(true);
+                                    collector.skipLast();
+                                    return ret;
                                 }
                             }
-                        // break;
+                            // break;
 
-                        case PP_ENDIF:
+                        case PP_ENDIF:{
                             pop_state();
-                            return source_skipline(warnings.contains(Warning.ENDIF_LABELS));
+                            Token ret = source_skipline(warnings.contains(Warning.ENDIF_LABELS));
+                            collector.skipLast();
+                            return ret;
+                    }
                         // break;
 
-                        case PP_LINE:
-                            return source_skipline(false);
+                        case PP_LINE: {
+                            Token ret = source_skipline(false);
+                            collector.skipLast();
+                            return ret;
+                        }
                         // break;
 
                         case PP_PRAGMA:
-                            if (!isActive())
-                                return source_skipline(false);
-                            return pragma();
+                            if (!isActive()) {
+                                Token ret = source_skipline(false);
+                                collector.skipLast();
+                                return ret;
+                            }
+                            Token ret = pragma();
+                            collector.skipLast();
+                            return ret;
                         // break;
 
                         default:

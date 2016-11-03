@@ -29,14 +29,17 @@ import javax.annotation.Nonnull;
  */
 /* pp */ class Argument extends ArrayList<Token> {
 
+    public List<Integer> indicies = new ArrayList<Integer>();
+    public ActionSequence actions;
     private List<Token> expansion;
 
     public Argument() {
         this.expansion = null;
     }
 
-    public void addToken(@Nonnull Token tok) {
+    public void addToken(@Nonnull Token tok, int index) {
         add(tok);
+        indicies.add(index);
     }
 
     /* pp */ void expand(@Nonnull Preprocessor p)
