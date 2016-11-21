@@ -19,18 +19,12 @@ package org.anarres.cpp;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
-import java.io.StringReader;
-import java.util.Arrays;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 import javax.annotation.Nonnull;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.SystemUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -193,7 +187,7 @@ public class Main {
         StringBuilder sb = new StringBuilder();
         StringBuilder test_sb = new StringBuilder();
         int step = 0;
-        Preprocessor.Environment state = null;
+        Environment state = null;
         try {
             for (;;) {
                 Token tok = pp.token();
@@ -201,23 +195,21 @@ public class Main {
                     break;
                 if (tok.getType() == Token.EOF)
                     break;
+                if (tok.getText().equals("X")) {
+                    state = pp.getCurrentState();
+                }
                 sb.append(tok.getText());
-                pp.updateCurrentState(pp.getCurrentState());
             }
-//            for (;;) {
-//                Token tok = pp.token();
-//                if (tok == null)
-//                    break;
-//                if (tok.getType() == Token.EOF)
-//                    break;
-//                test_sb.append(tok.getText());
-//            }
-//            if (sb.toString().compareToIgnoreCase(test_sb.toString()) != 0) {
-//                System.out.println(sb.toString());
-//                //System.out.println(test_sb.toString());
-//            } else {
-//                System.out.println("OK");
-//            }
+            pp.updateCurrentState(state,
+                    Collections.singletonList(new TokenS(new Token(Token.IDENTIFIER, "B"), new HashSet<String>())));
+            for (;;) {
+                Token tok = pp.token();
+                if (tok == null)
+                    break;
+                if (tok.getType() == Token.EOF)
+                    break;
+                sb.append(tok.getText());
+            }
         } catch (Exception e) {
             StringBuilder buf = new StringBuilder("Preprocessor failed:\n");
             Source s = pp.getSource();

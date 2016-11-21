@@ -2,14 +2,47 @@ package org.anarres.cpp;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.sun.tools.doclint.Env;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.io.ByteArrayInputStream;
+import java.io.ObjectInputStream;
+import java.util.*;
+
+class Environment {
+    public Map<String, Macro> macros;
+    public Integer counter;
+    public Stack<State> states;
+    public Set<String> onceseenpaths;
+    Environment(Map<String, Macro> macros,
+        Stack<State> states, int counter, Set<String> onceseenpaths) {
+        this.macros = macros;
+        this.states = states;
+        this.counter = counter;
+        this.onceseenpaths = onceseenpaths;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        Environment o = (Environment)obj;
+        if (o.counter != this.counter)
+            return false;
+        if (!onceseenpaths.equals(o.onceseenpaths))
+            return false;
+        if (!macros.equals(o.macros))
+            return false;
+        if (states.size() != o.states.size())
+            return false;
+        for (int i = 0; i < states.size(); i ++) {
+            if (!states.get(i).equals(o.states.get(i)))
+                return false;
+        }
+        return true;
+    }
+}
 
 class ActionSequence {
     public List<Action> actions = new ArrayList<Action>();
-    public List<byte[]> environments = new ArrayList<byte[]>();
+    public List<Environment> environments = new ArrayList<Environment>();
 }
 
 abstract class Action {

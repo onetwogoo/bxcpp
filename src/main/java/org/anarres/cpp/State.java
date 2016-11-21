@@ -18,7 +18,7 @@ package org.anarres.cpp;
 
 import java.io.Serializable;
 
-/* pp */ class State implements Serializable {
+/* pp */ class State implements Serializable, Cloneable{
 
     boolean parent;
     boolean active;
@@ -66,5 +66,28 @@ import java.io.Serializable;
         return "parent=" + parent
                 + ", active=" + active
                 + ", sawelse=" + sawElse;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        State o = (State)obj;
+        return o.parent == this.parent && o.active == this.active && o.sawElse == this.sawElse;
+    }
+
+    @Override
+    public int hashCode() {
+        int parentValue = parent ? 1 : 0;
+        int activeValue = active ? 1 : 0;
+        int sawElseValue = sawElse ? 1 : 0;
+        return (parentValue << 2) | (activeValue << 1) | sawElseValue;
+    }
+
+    @Override
+    protected State clone() {
+        State obj = new State();
+        obj.parent = this.parent;
+        obj.active = this.active;
+        obj.sawElse = this.sawElse;
+        return obj;
     }
 }

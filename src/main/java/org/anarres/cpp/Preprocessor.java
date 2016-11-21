@@ -76,13 +76,6 @@ import static org.anarres.cpp.Token.*;
  */
 public class Preprocessor implements Closeable {
 
-    public class Environment {
-        private byte[] env;
-        Environment(byte[] env) {
-            this.env = env;
-        }
-    }
-
     private static final Logger LOG = LoggerFactory.getLogger(Preprocessor.class);
 
     private static final Source INTERNAL = new Source() {
@@ -107,7 +100,7 @@ public class Preprocessor implements Closeable {
     private static final Macro __FILE__ = new Macro(INTERNAL, "__FILE__");
     private static final Macro __COUNTER__ = new Macro(INTERNAL, "__COUNTER__");
 
-    private final List<Source> inputs;
+    private List<Source> inputs;
 
     /* The fundamental engine. */
     private Map<String, Macro> macros;
@@ -154,30 +147,27 @@ public class Preprocessor implements Closeable {
     }
 
     Environment getCurrentState() {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream(1024 * 1024);
-            ObjectOutputStream oos = new ObjectOutputStream(baos);
-            oos.writeObject(macros);
-            oos.writeObject(states);
-            oos.writeObject(counter);
-            oos.writeObject(onceseenpaths);
-            oos.flush();
-            return new Environment(baos.toByteArray());
-        } catch (Exception e) {
-            e.printStackTrace();
+        Stack<State> newStates = new Stack<State>();
+        for (State s : states) {
+            newStates.add(s.clone());
         }
-        return null;
+        return new Environment(new HashMap<String, Macro>(macros),
+                    newStates, counter, new HashSet<String>(onceseenpaths));
     }
 
-    void updateCurrentState(Environment e) {
-        try {
-            ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(e.env));
-            macros = (Map<String, Macro>)ois.readObject();
-            states = (Stack<State>)ois.readObject();
-            counter = (Integer)ois.readObject();
-            onceseenpaths = (Set<String>)ois.readObject();
-        } catch (Exception exception) {
-            exception.printStackTrace();
+    void updateCurrentState(Environment e, List<TokenS> tokenSes) {
+        macros = new HashMap<String, Macro>(e.macros);
+        Stack<State> newStates = new Stack<State>();
+        for (State s : e.states) {
+            newStates.add(s.clone());
+        }
+        states = newStates;
+        counter = e.counter;
+        onceseenpaths = new HashSet<String>(e.onceseenpaths);
+        source = null;
+        inputs = new ArrayList<Source>();
+        for (TokenS tokenS : tokenSes) {
+            inputs.add(new DisableListSource(tokenS));
         }
     }
 
