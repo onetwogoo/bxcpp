@@ -105,7 +105,7 @@ public class FileLexerSource extends InputLexerSource {
     @Override
     public Token token() throws IOException, LexerException {
         Token token = super.token();
-        if (producedTokens != null) {
+        if (producedTokens != null && token.getType() != Token.EOF) {
             producedTokens.add(token);
         }
         return token;

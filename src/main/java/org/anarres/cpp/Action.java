@@ -1,20 +1,15 @@
 package org.anarres.cpp;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.sun.tools.doclint.Env;
-
-import java.io.ByteArrayInputStream;
-import java.io.ObjectInputStream;
+import com.google.gson.*;
 import java.util.*;
 
 class Environment {
-    public Map<String, Macro> macros;
-    public Integer counter;
-    public Stack<State> states;
-    public Set<String> onceseenpaths;
+    public final Map<String, Macro> macros;
+    public final int counter;
+    public final Stack<State> states;
+    public final List<String> onceseenpaths;
     Environment(Map<String, Macro> macros,
-        Stack<State> states, int counter, Set<String> onceseenpaths) {
+        Stack<State> states, int counter, List<String> onceseenpaths) {
         this.macros = macros;
         this.states = states;
         this.counter = counter;
@@ -43,25 +38,40 @@ class Environment {
 class ActionSequence {
     public List<Action> actions = new ArrayList<Action>();
     public List<Environment> environments = new ArrayList<Environment>();
+
+    public JsonArray toJson() {
+        JsonArray result = new JsonArray();
+        for (Action act: actions) {
+            result.add(act.toJson());
+        }
+        return result;
+    }
 }
 
-abstract class Action {
+interface Action {
+    JsonObject toJson();
 }
 
-class Skip extends Action {
+class Skip implements Action {
     public TokenS token;
 
     public Skip(TokenS token) {
         this.token = token;
     }
 
+    public JsonObject toJson() {
+        JsonObject result =  new JsonObject();
+        result.add("skip", token.toJson());
+        return result;
+    }
+
     @Override
     public String toString() {
-        return "Skip " + token;
+        return toJson().toString();
     }
 }
 
-class Replace extends Action {
+class Replace implements Action {
     public List<TokenS> old;
     public List<MapSeg> mapping;
     public Set<String> disables;
@@ -72,21 +82,29 @@ class Replace extends Action {
         this.disables = disables;
     }
 
+    public JsonObject toJson() {
+        JsonObject result = new JsonObject();
+        JsonArray replace = new JsonArray();
+        for (TokenS token:old) {
+            replace.add(token.toJson());
+        }
+        result.add("repl", replace);
+        JsonArray mpn = new JsonArray();
+        for (MapSeg seg: mapping) {
+            mpn.add(seg.toJson());
+        }
+        result.add("mpn", mpn);
+        JsonArray dsbl = new JsonArray();
+        for (String macro: disables) {
+            dsbl.add(new JsonPrimitive(macro));
+        }
+        result.add("dsbl", dsbl);
+        return result;
+    }
+
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("Replace o=");
-        for (TokenS token: old) {
-            sb.append(token).append(" ");
-        }
-        sb.append(" mpn=");
-        for (MapSeg seg:mapping) {
-            sb.append(seg).append(" ");
-        }
-        sb.append(" dsbl=");
-        for (String macro:disables) {
-            sb.append(macro).append(" ");
-        }
-        return sb.toString();
+        return toJson().toString();
     }
 }
 
@@ -99,24 +117,45 @@ class TokenS {
         this.disables = disables;
     }
 
+    public JsonElement toJson() {
+        if (disables.isEmpty()) {
+            return new JsonPrimitive(token.getText());
+        }
+        JsonObject result = new JsonObject();
+        result.addProperty("t", token.getText());
+        JsonArray ds = new JsonArray();
+        for (String macro :disables) {
+            ds.add(new JsonPrimitive(macro));
+        }
+        result.add("d", ds);
+        return result;
+    }
+
+    @Override
+    public int hashCode() {
+        return token.hashCode() ^ disables.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof TokenS) {
+            TokenS other = (TokenS)obj;
+            return other.token.equals(token) && other.disables.equals(disables);
+        }
+        return false;
+    }
+
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        if (token.getType() == Token.NL) sb.append("\\n");
-        else sb.append(token.getText());
-//        sb.append("{");
-//        for (String macro:disables) {
-//            sb.append(macro).append(" ");
-//        }
-//        sb.append("}");
-        return sb.toString();
+        return toJson().toString();
     }
 }
 
-abstract class MapSeg {
+interface MapSeg {
+    JsonObject toJson();
 }
 
-class Sub extends MapSeg {
+class Sub implements MapSeg {
     public List<Integer> indicies;
     public ActionSequence actions;
 
@@ -124,12 +163,33 @@ class Sub extends MapSeg {
         this.indicies = indicies;
         this.actions = actions;
     }
+
+    public JsonObject toJson() {
+        JsonObject result = new JsonObject();
+        JsonArray indx = new JsonArray();
+        for (int i: indicies) {
+            indx.add(new JsonPrimitive(i));
+        }
+        result.add("indx", indx);
+        result.add("acts", actions.toJson());
+        return result;
+    }
 }
 
-class New extends MapSeg {
+class New implements MapSeg {
     public List<Token> tokens;
 
     public New(List<Token> tokens) {
         this.tokens = tokens;
+    }
+
+    public JsonObject toJson() {
+        JsonObject result = new JsonObject();
+        JsonArray toks = new JsonArray();
+        for (Token t: tokens) {
+            toks.add(new JsonPrimitive(t.getText()));
+        }
+        result.add("new", toks);
+        return result;
     }
 }

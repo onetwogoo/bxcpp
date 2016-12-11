@@ -167,6 +167,19 @@ public final class Token implements Serializable {
         return TokenType.getTokenName(type);
     }
 
+    @Override
+    public int hashCode() {
+        return text.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof Token) {
+            return text.equals(((Token)obj).text);
+        }
+        return false;
+    }
+
     public static final int AND_EQ = 257;
     public static final int ARROW = 258;
     public static final int CHARACTER = 259;

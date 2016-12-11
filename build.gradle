@@ -16,7 +16,7 @@ stdproject {
 		license 'Apache-2.0'
 	}
 
-	sourceCompatibility = 1.5
+	sourceCompatibility = 1.8
 	animalsniffer {
 		signature = "org.codehaus.mojo.signature:java15:+@signature"
 	}

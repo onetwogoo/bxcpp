@@ -17,14 +17,15 @@
 package org.anarres.cpp;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.*;
 import javax.annotation.Nonnull;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
-import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,36 +48,88 @@ public class Main {
         return buf;
     }
 
-    private static void evalRoot(File baseDirectory) throws Exception{
-        for (File file : baseDirectory.listFiles()) {
-            if (file.isDirectory()) {
-                evalRoot(file);
-            } else if (file.getName().endsWith(".c") || file.getName().endsWith(".cpp")){
-                String filename = file.getAbsolutePath();
-                String jcppResult = (new Main()).run(new String[]{filename, "-I", "/Users/Shared/linux-4.8.4/include",
-                        "-I", "/Users/shared/linux-4.8.4/arch/x86/include",
-                        "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/8.0.0/include",
-                        "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include",
-                        "-I", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/usr/include"});
-                IOUtils.write(jcppResult, new FileOutputStream(filename + ".jcpp"));
-                Process p = Runtime.getRuntime().exec("gcc -E -CC -P -undef -I/Users/shared/linux-4.8.4//include -I/Users/shared/linux-4.8.4/arch/x86/include " + filename);
-                String gccResult = IOUtils.toString(p.getInputStream());
-                IOUtils.write(gccResult, new FileOutputStream(filename + ".gcc"));
-                Process diff = Runtime.getRuntime().exec("diff -ub " + filename + ".gcc " + filename + ".jcpp");
-                IOUtils.copy(diff.getInputStream(), new FileOutputStream(filename + ".diff"));
-            }
-        }
+    static class Result {
+        List<Token> original;
+        List<Token> produced = new ArrayList<Token>();
+        ActionSequence actions;
     }
 
     public static void main(String[] args) throws Exception {
-        String path = "/Users/shared/linux-4.8.4/test";
-        File baseDirectory = new File(path);
-        evalRoot(baseDirectory);
-        System.out.println("done.");
+        Result result = preprocess(args);
+//        System.out.println(result.original);
+        System.out.println(result.produced);
+//        System.out.println(result.actions.toJson());
 
+        Deque<TokenS> input = new LinkedList<>();
+        for (Token token: result.original) {
+            input.add(new TokenS(token, Collections.emptySet()));
+        }
+
+//        List<TokenS> expected = replay(input,result.actions);
+////        System.out.println(expected);
+//
+//        for (int i = 0; i < result.produced.size() && i < expected.size(); i++) {
+//            Token exp = expected.get(i).token;
+//            Token act = result.produced.get(i);
+//            if (! exp.equals(act)) {
+//                System.out.println("Expected " + exp + " actual " + act);
+//            }
+//        }
+//        if (expected.size() > result.produced.size()) {
+//            System.out.println("More tokens in expected");
+//        } else if (expected.size() < result.produced.size()) {
+//            System.out.println("More tokens in produced");
+//        }
     }
 
-    public String run(String[] args) throws Exception {
+    static List<TokenS> replay(Deque<TokenS> input, ActionSequence actions) {
+        List<TokenS> result = new ArrayList<TokenS>();
+        for (Action action : actions.actions) {
+//            System.out.println("Action:" + action + " rest:" + input);
+            if (action instanceof Skip) {
+                TokenS actual = ((Skip)action).token;
+                TokenS expected = input.removeFirst();
+                if (!expected.equals(actual)) {
+                    throw new RuntimeException("Expected " + expected + " skip " + actual + " instead\n" + input);
+                }
+                result.add(actual);
+            } else {
+                Replace replace = (Replace)action;
+                for (TokenS actual: replace.old) {
+                    TokenS expected = input.removeFirst();
+                    if (!expected.equals(actual)) {
+                        throw new RuntimeException("Expected " + expected + " old " + actual + " instead\n" + replace.toJson());
+                    }
+                }
+                List<TokenS> replSeq = new ArrayList<TokenS>();
+                for (MapSeg mapSeg:replace.mapping) {
+                    if (mapSeg instanceof New) {
+                        for (Token token: ((New)mapSeg).tokens) {
+                            replSeq.add(new TokenS(token, Collections.<String>emptySet()));
+                        }
+                    } else {
+                        Sub sub = (Sub)mapSeg;
+                        Deque<TokenS> subInput = new LinkedList<>();
+                        for (int i :sub.indicies) {
+                            subInput.add(replace.old.get(i));
+                        }
+                        for (TokenS tokenS: replay(subInput, sub.actions)) {
+                            replSeq.add(tokenS);
+                        }
+                    }
+                }
+                for (int i = replSeq.size() - 1; i>=0;i--) {
+                    TokenS tokenS = replSeq.get(i);
+                    Set<String> newDisables = new HashSet<String>(tokenS.disables);
+                    newDisables.addAll(replace.disables);
+                    input.addFirst(new TokenS(tokenS.token, newDisables));
+                }
+            }
+        }
+        return result;
+    }
+
+    public static Result preprocess(String[] args) throws Exception {
 
         OptionParser parser = new OptionParser();
         OptionSpec<?> helpOption = parser.accepts("help",
@@ -112,15 +165,13 @@ public class Main {
 
         if (options.has(helpOption)) {
             parser.printHelpOn(System.out);
-            return "";
+            return null;
         }
 
         Preprocessor pp = new Preprocessor();
         pp.addFeature(Feature.DIGRAPHS);
         pp.addFeature(Feature.TRIGRAPHS);
         //pp.addFeature(Feature.LINEMARKERS);
-        pp.addFeature(Feature.KEEPALLCOMMENTS);
-        pp.addFeature(Feature.KEEPCOMMENTS);
         pp.addWarning(Warning.IMPORT);
         pp.setListener(new DefaultPreprocessorListener());
         pp.addMacro("__JCPP__");
@@ -168,10 +219,8 @@ public class Main {
         if (inputs.isEmpty()) {
             pp.addInput(new InputLexerSource(System.in));
         } else {
-            for (File input : inputs) {
-                System.out.println(input.getName());
+            for (File input : inputs)
                 pp.addInput(new FileLexerSource(input));
-            }
         }
 
         if (pp.getFeature(Feature.DEBUG)) {
@@ -184,32 +233,20 @@ public class Main {
             LOG.info("End of search list.");
         }
 
-        StringBuilder sb = new StringBuilder();
-        StringBuilder test_sb = new StringBuilder();
-        int step = 0;
-        Environment state = null;
         try {
+            Result result = new Result();
+            pp.collector = new ActionCollector(pp, pp.inputs);
             for (;;) {
                 Token tok = pp.token();
                 if (tok == null)
                     break;
                 if (tok.getType() == Token.EOF)
                     break;
-                if (tok.getText().equals("X")) {
-                    state = pp.getCurrentState();
-                }
-                sb.append(tok.getText());
+                result.produced.add(tok);
             }
-            pp.updateCurrentState(state,
-                    Collections.singletonList(new TokenS(new Token(Token.IDENTIFIER, "B"), new HashSet<String>())));
-            for (;;) {
-                Token tok = pp.token();
-                if (tok == null)
-                    break;
-                if (tok.getType() == Token.EOF)
-                    break;
-                sb.append(tok.getText());
-            }
+            result.original = pp.collector.original;
+            result.actions = pp.collector.actions;
+            return result;
         } catch (Exception e) {
             StringBuilder buf = new StringBuilder("Preprocessor failed:\n");
             Source s = pp.getSource();
@@ -219,8 +256,7 @@ public class Main {
             }
             LOG.error(buf.toString(), e);
         }
-        System.out.println(sb.toString());
-        return sb.toString();
+        return null;
     }
 
     private static void version(@Nonnull PrintStream out) {

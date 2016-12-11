@@ -238,11 +238,12 @@ public abstract class Source implements Iterable<Token>, Closeable {
      * @return the NL token.
      */
     @Nonnull
-    public Token skipline(boolean white)
+    public Token skipline(boolean white, Preprocessor pp)
             throws IOException,
             LexerException {
         for (;;) {
             Token tok = token();
+            pp.collector.getToken(tok, this);
             switch (tok.getType()) {
                 case EOF:
                     /* There ought to be a newline before EOF.

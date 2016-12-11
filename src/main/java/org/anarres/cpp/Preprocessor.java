@@ -17,22 +17,10 @@
 package org.anarres.cpp;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.Stack;
-import java.util.TreeMap;
+import java.util.*;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
-import com.sun.tools.doclint.Env;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.anarres.cpp.PreprocessorCommand.*;
@@ -100,7 +88,7 @@ public class Preprocessor implements Closeable {
     private static final Macro __FILE__ = new Macro(INTERNAL, "__FILE__");
     private static final Macro __COUNTER__ = new Macro(INTERNAL, "__COUNTER__");
 
-    private List<Source> inputs;
+    public List<Source> inputs;
 
     /* The fundamental engine. */
     private Map<String, Macro> macros;
@@ -122,15 +110,17 @@ public class Preprocessor implements Closeable {
     private Set<Warning> warnings;
     private VirtualFileSystem filesystem;
     private PreprocessorListener listener;
-    public ActionCollector collector = new ActionCollector();
+    public ActionCollector collector;
+    public boolean collectOnly = false;
 
     public Preprocessor() {
         this.inputs = new ArrayList<Source>();
 
-        this.macros = new HashMap<String, Macro>();
+        this.macros = new HashMap<>();
         macros.put(__LINE__.getName(), __LINE__);
         macros.put(__FILE__.getName(), __FILE__);
         macros.put(__COUNTER__.getName(), __COUNTER__);
+        this.macros = Collections.unmodifiableMap(this.macros);
         this.states = new Stack<State>();
         states.push(new State());
         this.source = null;
@@ -151,12 +141,12 @@ public class Preprocessor implements Closeable {
         for (State s : states) {
             newStates.add(s.clone());
         }
-        return new Environment(new HashMap<String, Macro>(macros),
-                    newStates, counter, new HashSet<String>(onceseenpaths));
+        return new Environment(macros,
+                    newStates, counter, new ArrayList<String>(onceseenpaths));
     }
 
     void updateCurrentState(Environment e, List<TokenS> tokenSes) {
-        macros = new HashMap<String, Macro>(e.macros);
+        macros = e.macros;
         Stack<State> newStates = new Stack<State>();
         for (State s : e.states) {
             newStates.add(s.clone());
@@ -386,7 +376,10 @@ public class Preprocessor implements Closeable {
         /* Already handled as a source error in macro(). */
         if ("defined".equals(name))
             throw new LexerException("Cannot redefine name 'defined'");
+
+        Map<String,Macro> macros = new LinkedHashMap<String, Macro>(this.macros);
         macros.put(m.getName(), m);
+        this.macros = Collections.unmodifiableMap(macros);
     }
 
     /**
@@ -683,7 +676,7 @@ public class Preprocessor implements Closeable {
     private void source_untoken(Token tok) {
         if (this.source_token != null)
             throw new IllegalStateException("Cannot return two tokens");
-        collector.ungetToken(tok);
+        collector.ungetToken(tok, getSource());
         this.source_token = tok;
     }
 
@@ -717,7 +710,7 @@ public class Preprocessor implements Closeable {
             LexerException {
         // (new Exception("skipping line")).printStackTrace(System.out);
         Source s = getSource();
-        Token tok = s.skipline(white);
+        Token tok = s.skipline(white, this);
         /* XXX Refactor with source_token() */
         if (tok.getType() == EOF && s.isAutopop()) {
             // System.out.println("Autopop " + s);
@@ -859,7 +852,7 @@ public class Preprocessor implements Closeable {
 
                 for (Argument a : args) {
                     ActionCollector currentCollector =collector;
-                    collector = new ActionCollector();
+                    collector = new ActionCollector(this, Collections.emptyList());
                     a.expand(this);
                     a.actions = collector.actions;
                     collector = currentCollector;
@@ -868,12 +861,12 @@ public class Preprocessor implements Closeable {
                 // System.out.println("Macro " + m + " args " + args);
             } else {
                 /* nargs == 0 and we (correctly) got () */
-                args = null;
+                args = Collections.emptyList();
             }
 
         } else {
             /* Macro without args. */
-            args = null;
+            args = Collections.emptyList();
         }
 
         if (m == __LINE__) {
@@ -881,7 +874,7 @@ public class Preprocessor implements Closeable {
                     orig.getLine(), orig.getColumn(),
                     Integer.toString(orig.getLine()),
                     new NumericValue(10, Integer.toString(orig.getLine())))};
-            collector.replaceWith(Arrays.asList(tokens));
+                collector.replaceWith(Arrays.asList(tokens));
             push_source(new FixedTokenSource(tokens), true);
         } else if (m == __FILE__) {
             StringBuilder buf = new StringBuilder("\"");
@@ -908,7 +901,7 @@ public class Preprocessor implements Closeable {
             Token[] tokens = new Token[]{new Token(STRING,
                     orig.getLine(), orig.getColumn(),
                     text, text)};
-            collector.replaceWith(Arrays.asList(tokens));
+                collector.replaceWith(Arrays.asList(tokens));
             push_source(new FixedTokenSource(tokens), true);
         } else if (m == __COUNTER__) {
             /* This could equivalently have been done by adding
@@ -918,12 +911,12 @@ public class Preprocessor implements Closeable {
                     orig.getLine(), orig.getColumn(),
                     Integer.toString(value),
                     new NumericValue(10, Integer.toString(value)))};
-            collector.replaceWith(Arrays.asList(tokens));
+                collector.replaceWith(Arrays.asList(tokens));
             push_source(new FixedTokenSource(tokens), true);
         } else {
             List<MapSeg> mapping = new ArrayList<MapSeg>();
             MacroTokenSource macroTokenSource = new MacroTokenSource(m, args, mapping);
-            collector.replaceWith(mapping, macroTokenSource.disabledMacros());
+                collector.replaceWith(mapping, macroTokenSource.disabledMacros());
             push_source(macroTokenSource, true);
         }
 
@@ -954,13 +947,23 @@ public class Preprocessor implements Closeable {
                 case CCOMMENT:
                 case CPPCOMMENT:
                     space = true;
+                    collector.delete();
                     break;
 
                 default:
-                    if (space && !expansion.isEmpty())
+                    if (space && !expansion.isEmpty()) {
                         expansion.add(Token.space);
+                        collector.directInsert(
+                                new Replace(
+                                        Collections.<TokenS>emptyList(),
+                                        Collections.<MapSeg>singletonList(new New(Collections.singletonList(Token.space))),
+                                        Collections.<String>emptySet()));
+                        collector.directInsert(
+                                new Skip(new TokenS(Token.space, Collections.emptySet())));
+                    }
                     expansion.add(tok);
                     space = false;
+                    collector.skipLast();
                     break;
             }
         }
@@ -1160,7 +1163,9 @@ public class Preprocessor implements Closeable {
             Macro m = getMacro(tok.getText());
             if (m != null) {
                 /* XXX error if predefined */
+                HashMap<String, Macro> macros = new HashMap<>(this.macros);
                 macros.remove(m.getName());
+                this.macros = Collections.unmodifiableMap(macros);
             }
         }
         return source_skipline(true);
@@ -1184,9 +1189,9 @@ public class Preprocessor implements Closeable {
         if (getFeature(Feature.DEBUG))
             LOG.debug("pp: including " + file);
         FileLexerSource fileLexerSource = (FileLexerSource)file.getSource();
-        fileLexerSource.producedTokens =producedTokens;
+        fileLexerSource.producedTokens = producedTokens;
 
-        push_source(file.getSource(), true);
+        push_source(fileLexerSource, true);
         return true;
     }
 
@@ -1335,6 +1340,7 @@ public class Preprocessor implements Closeable {
             if (getFeature(Feature.LINEMARKERS))
                 return line_token(1, source.getName(), " 1");
             producedTokens.add(tok);
+            collector.directInsert(new Skip(new TokenS(tok, getSource().disabledMacros())));
             return tok;
         } finally {
             lexer.setInclude(false);
@@ -1847,15 +1853,25 @@ public class Preprocessor implements Closeable {
                             return tok;
                         }
                         if (!isActive()) {
-                            return toWhitespace(tok);
-                        }
-                        if (getFeature(Feature.KEEPCOMMENTS))
+                            tok =  toWhitespace(tok);
+                            collector.replaceWith(Collections.singletonList(tok));
+                            collector.directInsert(new Skip(new TokenS(tok, getSource().disabledMacros())));
                             return tok;
-                        return toWhitespace(tok);
+                        }
+                        if (getFeature(Feature.KEEPCOMMENTS)) {
+                            collector.skipLast();
+                            return tok;
+                        }
+                        tok = toWhitespace(tok);
+                        collector.replaceWith(Collections.singletonList(tok));
+                        collector.directInsert(new Skip(new TokenS(tok, getSource().disabledMacros())));
+                        return tok;
                     default:
                         // Return NL to preserve whitespace.
 						/* XXX This might lose a comment. */
-                        return source_skipline(false);
+                        tok = source_skipline(false);
+                        collector.skipLast();
+                        return tok;
                 }
             } else {
                 tok = source_token();
@@ -2062,7 +2078,9 @@ public class Preprocessor implements Closeable {
                                 return ret;
                             }
                             expr_token = null;
+                            collectOnly = true;
                             states.peek().setActive(expr(0) != 0);
+                            collectOnly = false;
                             tok = expr_token();	/* unget */
 
                             if (tok.getType() == NL) {
@@ -2102,7 +2120,9 @@ public class Preprocessor implements Closeable {
                                 return ret;
                             } else {
                                 expr_token = null;
+                                collectOnly = true;
                                 state.setActive(expr(0) != 0);
+                                collectOnly = false;
                                 tok = expr_token();	/* unget */
 
                                 if (tok.getType() == NL) {
@@ -2236,10 +2256,13 @@ public class Preprocessor implements Closeable {
     private Token token_nonwhite()
             throws IOException,
             LexerException {
+        if (collectOnly) throw new Error("Nested collect only");
+        collectOnly = true;
         Token tok;
         do {
             tok = _token();
         } while (isWhite(tok));
+        collectOnly = false;
         return tok;
     }
 
