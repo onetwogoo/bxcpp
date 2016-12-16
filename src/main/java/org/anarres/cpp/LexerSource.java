@@ -19,6 +19,7 @@ package org.anarres.cpp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.util.Collections;
 import javax.annotation.Nonnull;
 import static org.anarres.cpp.Token.*;
 
@@ -766,7 +767,7 @@ public class LexerSource extends Source {
     }
 
     @Override
-    public Token token()
+    public TokenS token()
             throws IOException,
             LexerException {
         Token tok = null;
@@ -798,7 +799,7 @@ public class LexerSource extends Source {
                     }
                     if (DEBUG)
                         System.out.println("lx: Returning NL: " + tok);
-                    return tok;
+                    return new TokenS(tok, Collections.emptySet());
                 }
                 /* Let it be handled as whitespace. */
                 break;
@@ -997,7 +998,7 @@ public class LexerSource extends Source {
         if (DEBUG)
             System.out.println("lx: Returning " + tok);
         // (new Exception("here")).printStackTrace(System.out);
-        return tok;
+        return new TokenS(tok, Collections.emptySet());
     }
 
     @Override

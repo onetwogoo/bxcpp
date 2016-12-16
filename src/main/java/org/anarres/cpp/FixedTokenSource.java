@@ -18,6 +18,7 @@ package org.anarres.cpp;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /* pp */ class FixedTokenSource extends Source {
@@ -25,25 +26,25 @@ import java.util.List;
     private static final Token EOF
             = new Token(Token.EOF, "<ts-eof>");
 
-    private final List<Token> tokens;
+    private final List<TokenS> tokens;
     private int idx;
 
-    /* pp */ FixedTokenSource(Token... tokens) {
+    /* pp */ FixedTokenSource(TokenS... tokens) {
         this.tokens = Arrays.asList(tokens);
         this.idx = 0;
     }
 
-    /* pp */ FixedTokenSource(List<Token> tokens) {
+    /* pp */ FixedTokenSource(List<TokenS> tokens) {
         this.tokens = tokens;
         this.idx = 0;
     }
 
     @Override
-    public Token token()
+    public TokenS token()
             throws IOException,
             LexerException {
         if (idx >= tokens.size())
-            return EOF;
+            return new TokenS(EOF, Collections.emptySet());
         return tokens.get(idx++);
     }
 

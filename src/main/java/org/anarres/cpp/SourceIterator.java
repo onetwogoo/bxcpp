@@ -26,10 +26,10 @@ import static org.anarres.cpp.Token.EOF;
  * An Iterator for {@link Source Sources},
  * returning {@link Token Tokens}.
  */
-public class SourceIterator implements Iterator<Token> {
+public class SourceIterator implements Iterator<TokenS> {
 
     private final Source source;
-    private Token tok;
+    private TokenS tok;
 
     public SourceIterator(@Nonnull Source s) {
         this.source = s;
@@ -60,7 +60,7 @@ public class SourceIterator implements Iterator<Token> {
     @Override
     public boolean hasNext() {
         advance();
-        return tok.getType() != EOF;
+        return tok.token.getType() != EOF;
     }
 
     /**
@@ -71,10 +71,10 @@ public class SourceIterator implements Iterator<Token> {
      *		throws a LexerException or IOException
      */
     @Override
-    public Token next() {
+    public TokenS next() {
         if (!hasNext())
             throw new NoSuchElementException();
-        Token t = this.tok;
+        TokenS t = this.tok;
         this.tok = null;
         return t;
     }

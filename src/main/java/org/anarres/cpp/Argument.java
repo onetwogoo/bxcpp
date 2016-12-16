@@ -27,17 +27,17 @@ import javax.annotation.Nonnull;
  *
  * This encapsulates a raw and preprocessed token stream.
  */
-/* pp */ class Argument extends ArrayList<Token> {
+/* pp */ class Argument extends ArrayList<TokenS> {
 
     public List<Integer> indicies = new ArrayList<Integer>();
     public ActionSequence actions;
-    private List<Token> expansion;
+    private List<TokenS> expansion;
 
     public Argument() {
         this.expansion = null;
     }
 
-    public void addToken(@Nonnull Token tok, int index) {
+    public void addToken(@Nonnull TokenS tok, int index) {
         add(tok);
         indicies.add(index);
     }
@@ -53,7 +53,7 @@ import javax.annotation.Nonnull;
     }
 
     @Nonnull
-    public Iterator<Token> expansion() {
+    public Iterator<TokenS> expansion() {
         return expansion.iterator();
     }
 
@@ -64,13 +64,13 @@ import javax.annotation.Nonnull;
         // buf.append(super.toString());
         buf.append("raw=[ ");
         for (int i = 0; i < size(); i++)
-            buf.append(get(i).getText());
+            buf.append(get(i).token.getText());
         buf.append(" ];expansion=[ ");
         if (expansion == null)
             buf.append("null");
         else
-            for (Token token : expansion)
-                buf.append(token.getText());
+            for (TokenS token : expansion)
+                buf.append(token.token.getText());
         buf.append(" ])");
         return buf.toString();
     }

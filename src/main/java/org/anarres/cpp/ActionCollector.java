@@ -4,7 +4,7 @@ import java.util.*;
 
 public class ActionCollector {
     /* Recording actions */
-    public List<Token> original = new ArrayList<>();
+    public List<TokenS> original = new ArrayList<>();
     public ActionSequence actions = new ActionSequence();
     private List<TokenS> currentTokens = new ArrayList<TokenS>();
     private Preprocessor pp;
@@ -16,19 +16,18 @@ public class ActionCollector {
         actions.environments.add(pp.getCurrentState());
     }
 
-    public void getToken(Token token, Source source) {
-        if (token.getType() == Token.P_LINE || token.getType() == Token.EOF)
+    public void getToken(TokenS token, Source source) {
+        if (token.token.getType() == Token.P_LINE || token.token.getType() == Token.EOF)
             return;
         if (pp.collectOnly && source instanceof MacroTokenSource) return;
         if (isRootSource(source)) {
             original.add(token);
         }
-        TokenS tokenS = new TokenS(token, source.disabledMacros());
-        currentTokens.add(tokenS);
+        currentTokens.add(token);
     }
 
-    public void ungetToken(Token token, Source source) {
-        if (token != currentTokens.get(currentTokens.size() - 1).token)
+    public void ungetToken(TokenS token, Source source) {
+        if (token.token != currentTokens.get(currentTokens.size() - 1).token)
             throw new Error("Unget expected " + token + " got " + currentTokens.get(currentTokens.size() - 1).token);
         if (pp.collectOnly && source instanceof MacroTokenSource) return;
         if (isRootSource(source)) {
@@ -91,19 +90,19 @@ public class ActionCollector {
     /**
      * Replace all tokens with producedTokens, which may be filled later
      */
-    public void replaceWith(List<Token> newTokens) {
+    public void replaceWithToken(List<Token> newTokens, Set<String> disables) {
         if (pp.collectOnly) return;
         actions.actions.add(new Replace(currentTokens, Collections.<MapSeg>singletonList(
                 new New(newTokens)
-        ), Collections.<String>emptySet()));
+        ), disables));
         actions.environments.add(pp.getCurrentState());
-        currentTokens = new ArrayList<TokenS>();
+        currentTokens = new ArrayList<>();
     }
 
     /**
      * Replace all tokens with a mapping, which will be filled later
      */
-    public void replaceWith(List<MapSeg> mapping, Set<String> disables) {
+    public void replaceWithMapSeg(List<MapSeg> mapping, Set<String> disables) {
         if (pp.collectOnly) return;
         actions.actions.add(new Replace(currentTokens, mapping, disables));
         actions.environments.add(pp.getCurrentState());

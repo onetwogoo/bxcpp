@@ -39,7 +39,7 @@ import static org.anarres.cpp.Token.WHITESPACE;
  *
  * BUG: Error messages are not handled properly.
  */
-public abstract class Source implements Iterable<Token>, Closeable {
+public abstract class Source implements Iterable<TokenS>, Closeable {
 
     private Source parent;
     private boolean autopop;
@@ -174,18 +174,6 @@ public abstract class Source implements Iterable<Token>, Closeable {
     }
 
     /**
-     * Returns true if this Source is expanding the given macro.
-     *
-     * This is used to prevent macro recursion.
-     */
-    /* pp */ boolean isExpanding(@Nonnull Macro m) {
-        Source parent = getParent();
-        if (parent != null)
-            return parent.isExpanding(m);
-        return false;
-    }
-
-    /**
      * Returns true if this Source should be transparently popped
      * from the input stack.
      *
@@ -218,7 +206,7 @@ public abstract class Source implements Iterable<Token>, Closeable {
      * @see Token
      */
     @Nonnull
-    public abstract Token token()
+    public abstract TokenS token()
             throws IOException,
             LexerException;
 
@@ -226,7 +214,7 @@ public abstract class Source implements Iterable<Token>, Closeable {
      * Returns a token iterator for this Source.
      */
     @Override
-    public Iterator<Token> iterator() {
+    public Iterator<TokenS> iterator() {
         return new SourceIterator(this);
     }
 
@@ -238,22 +226,22 @@ public abstract class Source implements Iterable<Token>, Closeable {
      * @return the NL token.
      */
     @Nonnull
-    public Token skipline(boolean white, Preprocessor pp)
+    public TokenS skipline(boolean white, Preprocessor pp)
             throws IOException,
             LexerException {
         for (;;) {
-            Token tok = token();
+            TokenS tok = token();
             pp.collector.getToken(tok, this);
-            switch (tok.getType()) {
+            switch (tok.token.getType()) {
                 case EOF:
                     /* There ought to be a newline before EOF.
                      * At least, in any skipline context. */
                     /* XXX Are we sure about this? */
-                    warning(tok.getLine(), tok.getColumn(),
+                    warning(tok.token.getLine(), tok.token.getColumn(),
                             "No newline before end of file");
-                    return new Token(NL,
-                            tok.getLine(), tok.getColumn(),
-                            "\n");
+                    return new TokenS(new Token(NL,
+                            tok.token.getLine(), tok.token.getColumn(),
+                            "\n"), tok.disables);
                 // return tok;
                 case NL:
                     /* This may contain one or more newlines. */
@@ -265,7 +253,7 @@ public abstract class Source implements Iterable<Token>, Closeable {
                 default:
                     /* XXX Check white, if required. */
                     if (white)
-                        warning(tok.getLine(), tok.getColumn(),
+                        warning(tok.token.getLine(), tok.token.getColumn(),
                                 "Unexpected nonwhite token");
                     break;
             }
@@ -292,9 +280,5 @@ public abstract class Source implements Iterable<Token>, Closeable {
 
     public void close()
             throws IOException {
-    }
-
-    public Set<String> disabledMacros() {
-        return new LinkedHashSet<String>();
     }
 }

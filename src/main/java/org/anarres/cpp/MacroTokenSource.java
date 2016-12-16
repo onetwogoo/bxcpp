@@ -17,10 +17,7 @@
 package org.anarres.cpp;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
 
@@ -36,29 +33,22 @@ import static org.anarres.cpp.Token.*;
     private static final Logger LOG = LoggerFactory.getLogger(MacroTokenSource.class);
     private final Macro macro;
     private final Iterator<Token> tokens;	/* Pointer into the macro.  */
+    private final Set<String> disables;
 
     private final List<Argument> args;	/* { unexpanded, expanded } */
 
-    private Iterator<Token> arg;	/* "current expansion" */
+    private Iterator<TokenS> arg;	/* "current expansion" */
     private boolean insideArgument;
 
     private List<MapSeg> mapping;
 
-    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping) {
+    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping, Set<String> disables) {
         this.macro = m;
         this.tokens = m.getTokens().iterator();
         this.args = args;
         this.mapping = mapping;
         this.arg = null;
-    }
-
-    @Override
-    /* pp */ boolean isExpanding(@Nonnull Macro m) {
-        /* When we are expanding an arg, 'this' macro is not
-         * being expanded, and thus we may re-expand it. */
-        if (/* XXX this.arg == null && */this.macro == m)
-            return true;
-        return super.isExpanding(m);
+        this.disables = disables;
     }
 
     /* XXX Called from Preprocessor [ugly]. */
@@ -193,26 +183,29 @@ import static org.anarres.cpp.Token.*;
     }
 
     @Override
-    public Token token()
+    public TokenS token()
             throws IOException,
             LexerException {
-        Token token = _token();
-        if (!insideArgument && token.getType() != Token.EOF) {
-            mapping.add(new New(Collections.singletonList(token)));
+        TokenS token = _token();
+        if (!insideArgument && token.token.getType() != Token.EOF) {
+            mapping.add(new New(Collections.singletonList(token.token)));
         }
         return token;
     }
 
-    private Token _token() throws IOException,LexerException {
+    private TokenS _token() throws IOException,LexerException {
         for (;;) {
             /* Deal with lexed tokens first. */
 
             if (arg != null) {
                 if (arg.hasNext()) {
-                    Token tok = arg.next();
+                    TokenS tok = arg.next();
                     /* XXX PASTE -> INVALID. */
-                    assert tok.getType() != M_PASTE :
+                    assert tok.token.getType() != M_PASTE :
                             "Unexpected paste token";
+                    Set<String> disables = new HashSet<>(tok.disables);
+                    disables.addAll(this.disables);
+                    tok.disables = Collections.unmodifiableSet(disables);
                     return tok;
                 }
                 arg = null;
@@ -220,7 +213,7 @@ import static org.anarres.cpp.Token.*;
             }
 
             if (!tokens.hasNext())
-                return new Token(EOF, -1, -1, "");	/* End of macro. */
+                return new TokenS(new Token(EOF, -1, -1, ""), Collections.emptySet());	/* End of macro. */
 
             Token tok = tokens.next();
             int idx;
@@ -228,7 +221,7 @@ import static org.anarres.cpp.Token.*;
                 case M_STRING:
                     /* Use the nonexpanded arg. */
                     idx = ((Integer) tok.getValue()).intValue();
-                    return stringify(tok, args.get(idx));
+                    return new TokenS(stringify(tok, args.get(idx)), disables);
                 case M_ARG:
                     /* Expand the arg. */
                     idx = ((Integer) tok.getValue()).intValue();
@@ -242,7 +235,7 @@ import static org.anarres.cpp.Token.*;
                     paste(tok);
                     break;
                 default:
-                    return tok;
+                    return new TokenS(tok, this.disables);
             }
         } /* for */
 
@@ -256,12 +249,5 @@ import static org.anarres.cpp.Token.*;
         if (parent != null)
             buf.append(" in ").append(String.valueOf(parent));
         return buf.toString();
-    }
-
-    @Override
-    public Set<String> disabledMacros() {
-        Set<String> macros =  super.disabledMacros();
-        macros.add(macro.getName());
-        return macros;
     }
 }

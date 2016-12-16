@@ -109,7 +109,7 @@ class Replace implements Action {
 }
 
 class TokenS {
-    public Token token;
+    public final Token token;
     public Set<String> disables;
 
     public TokenS(Token token, Set<String> disables) {
