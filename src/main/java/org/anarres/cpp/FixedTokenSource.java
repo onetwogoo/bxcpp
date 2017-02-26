@@ -16,6 +16,8 @@
  */
 package org.anarres.cpp;
 
+import org.pcollections.Empty;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,7 +46,7 @@ import java.util.List;
             throws IOException,
             LexerException {
         if (idx >= tokens.size())
-            return new TokenS(EOF, Collections.emptySet());
+            return new TokenS(EOF, Empty.bag());
         return tokens.get(idx++);
     }
 

@@ -28,6 +28,9 @@ import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.pcollections.ConsPStack;
+import org.pcollections.Empty;
+import org.pcollections.PStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,15 +61,15 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         Result result = preprocess(args);
-        System.out.printf("original: %s\n", result.original);
-        System.out.printf("produced: %s\n", result.produced);
+//        System.out.printf("original: %s\n", result.original);
+//        System.out.printf("produced: %s\n", result.produced);
         FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
 //        System.out.printf("actions: %s\n", result.actions);
 
         Deque<TokenS> input = new LinkedList<>(result.original);
 
         List<TokenS> replayed = replay(input,result.actions);
-        System.out.printf("replayed: %s\n", replayed);
+//        System.out.printf("replayed: %s\n", replayed);
 
         for (int i = 0; i < result.produced.size() && i < replayed.size(); i++) {
             TokenS exp = replayed.get(i);
@@ -95,7 +98,7 @@ public class Main {
                 result.add(actual);
             } else {
                 Replace replace = (Replace)action;
-                for (TokenS actual: replace.old) {
+                for (TokenS actual: replace.original) {
                     TokenS expected = input.removeFirst();
                     if (!expected.equals(actual)) {
                         throw new RuntimeException("Expected " + expected + " old " + actual + " instead\n" + replace.toJson());
@@ -105,13 +108,13 @@ public class Main {
                 for (MapSeg mapSeg:replace.mapping) {
                     if (mapSeg instanceof New) {
                         for (Token token: ((New)mapSeg).tokens) {
-                            replSeq.add(new TokenS(token, Collections.<String>emptySet()));
+                            replSeq.add(new TokenS(token, Empty.bag()));
                         }
                     } else {
                         Sub sub = (Sub)mapSeg;
                         Deque<TokenS> subInput = new LinkedList<>();
                         for (int i :sub.indicies) {
-                            subInput.add(replace.old.get(i));
+                            subInput.add(replace.original.get(i));
                         }
                         for (TokenS tokenS: replay(subInput, sub.actions)) {
                             replSeq.add(tokenS);
@@ -120,9 +123,7 @@ public class Main {
                 }
                 for (int i = replSeq.size() - 1; i>=0;i--) {
                     TokenS tokenS = replSeq.get(i);
-                    Set<String> newDisables = new HashSet<String>(tokenS.disables);
-                    newDisables.addAll(replace.disables);
-                    input.addFirst(new TokenS(tokenS.token, newDisables));
+                    input.addFirst(new TokenS(tokenS.token, tokenS.disables.plusAll(replace.disables)));
                 }
             }
         }

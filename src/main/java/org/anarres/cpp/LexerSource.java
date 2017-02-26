@@ -16,6 +16,8 @@
  */
 package org.anarres.cpp;
 
+import org.pcollections.Empty;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
@@ -799,7 +801,7 @@ public class LexerSource extends Source {
                     }
                     if (DEBUG)
                         System.out.println("lx: Returning NL: " + tok);
-                    return new TokenS(tok, Collections.emptySet());
+                    return new TokenS(tok, Empty.bag());
                 }
                 /* Let it be handled as whitespace. */
                 break;
@@ -998,7 +1000,7 @@ public class LexerSource extends Source {
         if (DEBUG)
             System.out.println("lx: Returning " + tok);
         // (new Exception("here")).printStackTrace(System.out);
-        return new TokenS(tok, Collections.emptySet());
+        return new TokenS(tok, Empty.bag());
     }
 
     @Override

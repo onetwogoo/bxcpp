@@ -1,12 +1,17 @@
 package org.anarres.cpp;
 
+import org.pcollections.Empty;
+import org.pcollections.PSet;
+import org.pcollections.PVector;
+import org.pcollections.TreePVector;
+
 import java.util.*;
 
 public class ActionCollector {
     /* Recording actions */
     public List<TokenS> original = new ArrayList<>();
     public ActionSequence actions = new ActionSequence();
-    private List<TokenS> currentTokens = new ArrayList<TokenS>();
+    private List<TokenS> currentTokens = new ArrayList<>();
     private Preprocessor pp;
     private List<Source> rootSources;
 
@@ -55,6 +60,11 @@ public class ActionCollector {
         actions.environments.add(pp.getCurrentState());
     }
 
+    public void revert(int index, Action newAction) {
+        if (pp.collectOnly) return;
+        actions.actions.set(index, newAction);
+    }
+
     /**
      * Delete all tokens in currentTokens except the last one
      * Then skip the last token
@@ -67,32 +77,35 @@ public class ActionCollector {
         TokenS last = currentTokens.get(currentTokens.size() - 1);
         if (currentTokens.size() > 1) {
             currentTokens.remove(currentTokens.size() - 1);
-            actions.actions.add(new Replace(currentTokens, Collections.<MapSeg>emptyList(), Collections.<String>emptySet()));
+            actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
             actions.environments.add(pp.getCurrentState());
         }
         actions.actions.add(new Skip(last));
         actions.environments.add(pp.getCurrentState());
-        currentTokens = new ArrayList<TokenS>();
+        currentTokens = new ArrayList<>();
     }
 
     /**
      * Delete all tokens in currentTokens
+     * @return action index
      */
-    public void delete() {
-        if (pp.collectOnly) return;
+    public int delete() {
+        if (pp.collectOnly) return -1;
         if (!currentTokens.isEmpty()) {
-            actions.actions.add(new Replace(currentTokens, Collections.<MapSeg>emptyList(), Collections.<String>emptySet()));
+            actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
             actions.environments.add(pp.getCurrentState());
-            currentTokens = new ArrayList<TokenS>();
+            currentTokens = new ArrayList<>();
+            return actions.actions.size() - 1;
         }
+        return -1;
     }
 
     /**
      * Replace all tokens with newTokens, which may be filled later
      */
-    public void replaceWithNewTokens(List<Token> newTokens, Set<String> disables) {
+    public void replaceWithNewTokens(List<Token> newTokens, PSet<String> disables) {
         if (pp.collectOnly) return;
-        actions.actions.add(new Replace(currentTokens, Collections.singletonList(
+        actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.singletonList(
                 new New(newTokens)
         ), disables));
         actions.environments.add(pp.getCurrentState());
@@ -102,9 +115,9 @@ public class ActionCollector {
     /**
      * Replace all tokens with a mapping, which will be filled later
      */
-    public void replaceWithMapping(List<MapSeg> mapping, Set<String> disables) {
+    public void replaceWithMapping(List<MapSeg> mapping, PSet<String> disables) {
         if (pp.collectOnly) return;
-        actions.actions.add(new Replace(currentTokens, mapping, disables));
+        actions.actions.add(new Replace(TreePVector.from(currentTokens), mapping, disables));
         actions.environments.add(pp.getCurrentState());
         currentTokens = new ArrayList<>();
     }

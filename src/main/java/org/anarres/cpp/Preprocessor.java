@@ -20,7 +20,9 @@ import java.io.*;
 import java.util.*;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import javax.crypto.interfaces.PBEKey;
 
+import org.pcollections.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.anarres.cpp.PreprocessorCommand.*;
@@ -578,7 +580,7 @@ public class Preprocessor implements Closeable {
             /* We actually want 'did the nested source
              * contain a newline token', which isNumbered()
              * approximates. This is not perfect, but works. */
-            return new TokenS(line_token(t.getLine(), t.getName(), " 2"), Collections.emptySet());
+            return new TokenS(line_token(t.getLine(), t.getName(), " 2"), Empty.bag());
         }
 
         return null;
@@ -592,10 +594,10 @@ public class Preprocessor implements Closeable {
     @Nonnull
     private TokenS next_source() {
         if (inputs.isEmpty())
-            return new TokenS(new Token(EOF), Collections.emptySet());
+            return new TokenS(new Token(EOF), Empty.bag());
         Source s = inputs.remove(0);
         push_source(s, true);
-        return new TokenS(line_token(s.getLine(), s.getName(), " 1"), Collections.emptySet());
+        return new TokenS(line_token(s.getLine(), s.getName(), " 1"), Empty.bag());
     }
 
     /* Source tokens */
@@ -712,8 +714,7 @@ public class Preprocessor implements Closeable {
         TokenS tok;
         List<Argument> args;
 
-        Set<String> disables = new HashSet<>(orig.disables);
-        disables.add(m.getName());
+        PSet<String> disables = HashTreePSet.singleton(m.getName()).plusAll(orig.disables);
 
         // System.out.println("pp: expanding " + m);
         if (m.isFunctionLike()) {
@@ -862,7 +863,7 @@ public class Preprocessor implements Closeable {
                             new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(),
                                     Integer.toString(orig.token.getLine()),
                                     new NumericValue(10, Integer.toString(orig.token.getLine()))),
-                            disables)
+                            HashTreePBag.from(disables))
             };
             collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
@@ -891,7 +892,7 @@ public class Preprocessor implements Closeable {
             TokenS[] tokens = new TokenS[]{
                     new TokenS(
                             new Token(STRING, orig.token.getLine(), orig.token.getColumn(), text, text),
-                            disables)
+                            HashTreePBag.from(disables))
             };
             collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
@@ -903,7 +904,7 @@ public class Preprocessor implements Closeable {
                     new TokenS(
                             new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(), Integer.toString(value),
                                     new NumericValue(10, Integer.toString(value))),
-                            disables)
+                            HashTreePBag.from(disables))
             };
             collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
@@ -927,6 +928,7 @@ public class Preprocessor implements Closeable {
             LexerException {
         List<TokenS> expansion = new ArrayList<TokenS>();
         TokenS space = null;
+        int deleteSpaceActionIndex = -1;
 
         push_source(new FixedTokenSource(arg), false);
 
@@ -941,18 +943,13 @@ public class Preprocessor implements Closeable {
                 case CCOMMENT:
                 case CPPCOMMENT:
                     space = tok;
-                    collector.delete();
+                    deleteSpaceActionIndex = collector.delete();
                     break;
 
                 default:
                     if (space != null && !expansion.isEmpty()) {
                         expansion.add(space);
-                        collector.directInsert(
-                                new Replace(
-                                        Collections.emptyList(),
-                                        Collections.singletonList(new New(Collections.singletonList(space.token))),
-                                        space.disables));
-                        collector.directInsert(new Skip(space));
+                        collector.revert(deleteSpaceActionIndex, new Skip(space));
                     }
                     expansion.add(tok);
                     space = null;
@@ -1326,12 +1323,12 @@ public class Preprocessor implements Closeable {
             /* Do the inclusion. */
             List<Token> producedTokens = new ArrayList<>();
             include(source.getPath(), tok.token.getLine(), name, quoted, next, producedTokens);
-            collector.replaceWithNewTokens(producedTokens,Collections.emptySet());
+            collector.replaceWithNewTokens(producedTokens, Empty.set());
 
             /* 'tok' is the 'nl' after the include. We use it after the
              * #line directive. */
             if (getFeature(Feature.LINEMARKERS))
-                return new TokenS(line_token(1, source.getName(), " 1"), Collections.emptySet());
+                return new TokenS(line_token(1, source.getName(), " 1"), Empty.bag());
 
             // If a.h is x y z, it actually replaces #include <a.h>\n with \nx y z.
             // So we prepend the \n at the beginning of producedTokens
@@ -1529,17 +1526,17 @@ public class Preprocessor implements Closeable {
                             + la.token.getText());
                     tok = new TokenS(new Token(NUMBER,
                             la.token.getLine(), la.token.getColumn(),
-                            "0", new NumericValue(10, "0")), Collections.emptySet());
+                            "0", new NumericValue(10, "0")), Empty.bag());
                 } else if (macros.containsKey(la.token.getText())) {
                     // System.out.println("Found macro");
                     tok = new TokenS(new Token(NUMBER,
                             la.token.getLine(), la.token.getColumn(),
-                            "1", new NumericValue(10, "1")), Collections.emptySet());
+                            "1", new NumericValue(10, "1")), Empty.bag());
                 } else {
                     // System.out.println("Not found macro");
                     tok = new TokenS(new Token(NUMBER,
                             la.token.getLine(), la.token.getColumn(),
-                            "0", new NumericValue(10, "0")), Collections.emptySet());
+                            "0", new NumericValue(10, "0")), Empty.bag());
                 }
 
                 if (paren) {
@@ -1849,8 +1846,8 @@ public class Preprocessor implements Closeable {
                             return tok;
                         }
                         if (!isActive()) {
-                            tok = new TokenS(toWhitespace(tok.token), tok.disables);
-                            collector.replaceWithNewTokens(Collections.singletonList(tok.token), tok.disables);
+                            tok = new TokenS(toWhitespace(tok.token), Empty.bag());
+                            collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
                             collector.directInsert(new Skip(tok));
                             return tok;
                         }
@@ -1858,8 +1855,8 @@ public class Preprocessor implements Closeable {
                             collector.skipLast();
                             return tok;
                         }
-                        tok = new TokenS(toWhitespace(tok.token), tok.disables);
-                        collector.replaceWithNewTokens(Collections.singletonList(tok.token), tok.disables);
+                        tok = new TokenS(toWhitespace(tok.token), Empty.bag());
+                        collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
                         collector.directInsert(new Skip(tok));
                         return tok;
                     default:

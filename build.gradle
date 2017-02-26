@@ -33,6 +33,7 @@ dependencies {
 
 	compile group: 'org.apache.commons', name: 'commons-io', version: '1.3.2'
 	compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.0'
+	compile group: 'org.pcollections', name: 'pcollections', version: '2.1.2'
 
 	testCompile 'com.google.guava:guava:18.0'
 }

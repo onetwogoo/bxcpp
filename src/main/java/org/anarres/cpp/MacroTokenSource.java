@@ -22,6 +22,9 @@ import javax.annotation.Nonnegative;
 import javax.annotation.Nonnull;
 
 import jdk.nashorn.internal.parser.Lexer;
+import org.pcollections.Empty;
+import org.pcollections.HashTreePBag;
+import org.pcollections.PSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.anarres.cpp.Token.*;
@@ -33,7 +36,7 @@ import static org.anarres.cpp.Token.*;
     private static final Logger LOG = LoggerFactory.getLogger(MacroTokenSource.class);
     private final Macro macro;
     private final Iterator<Token> tokens;	/* Pointer into the macro.  */
-    private final Set<String> disables;
+    private final PSet<String> disables;
 
     private final List<Argument> args;	/* { unexpanded, expanded } */
 
@@ -42,7 +45,7 @@ import static org.anarres.cpp.Token.*;
 
     private List<MapSeg> mapping;
 
-    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping, Set<String> disables) {
+    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping, PSet<String> disables) {
         this.macro = m;
         this.tokens = m.getTokens().iterator();
         this.args = args;
@@ -203,9 +206,7 @@ import static org.anarres.cpp.Token.*;
                     /* XXX PASTE -> INVALID. */
                     assert tok.token.getType() != M_PASTE :
                             "Unexpected paste token";
-                    Set<String> disables = new HashSet<>(tok.disables);
-                    disables.addAll(this.disables);
-                    tok = new TokenS(tok.token, Collections.unmodifiableSet(disables));
+                    tok = new TokenS(tok.token, tok.disables.plusAll(this.disables));
                     return tok;
                 }
                 arg = null;
@@ -213,7 +214,7 @@ import static org.anarres.cpp.Token.*;
             }
 
             if (!tokens.hasNext())
-                return new TokenS(new Token(EOF, -1, -1, ""), Collections.emptySet());	/* End of macro. */
+                return new TokenS(new Token(EOF, -1, -1, ""), Empty.bag());	/* End of macro. */
 
             Token tok = tokens.next();
             int idx;
@@ -221,7 +222,7 @@ import static org.anarres.cpp.Token.*;
                 case M_STRING:
                     /* Use the nonexpanded arg. */
                     idx = ((Integer) tok.getValue()).intValue();
-                    return new TokenS(stringify(tok, args.get(idx)), disables);
+                    return new TokenS(stringify(tok, args.get(idx)), HashTreePBag.from(disables));
                 case M_ARG:
                     /* Expand the arg. */
                     idx = ((Integer) tok.getValue()).intValue();
@@ -235,7 +236,7 @@ import static org.anarres.cpp.Token.*;
                     paste(tok);
                     break;
                 default:
-                    return new TokenS(tok, this.disables);
+                    return new TokenS(tok, HashTreePBag.from(this.disables));
             }
         } /* for */
 

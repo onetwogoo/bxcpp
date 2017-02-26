@@ -1,6 +1,8 @@
 package org.anarres.cpp;
 
 import com.google.gson.*;
+import org.pcollections.*;
+
 import java.util.*;
 
 class Environment {
@@ -55,6 +57,10 @@ class ActionSequence {
 }
 
 interface Action {
+    PVector<TokenS> skipped();
+    PVector<TokenS> original();
+    PVector<TokenS> processed();
+
     JsonObject toJson();
 }
 
@@ -63,6 +69,21 @@ class Skip implements Action {
 
     public Skip(TokenS token) {
         this.token = token;
+    }
+
+    @Override
+    public PVector<TokenS> skipped() {
+        return TreePVector.singleton(token);
+    }
+
+    @Override
+    public PVector<TokenS> original() {
+        return TreePVector.empty();
+    }
+
+    @Override
+    public PVector<TokenS> processed() {
+        return TreePVector.empty();
     }
 
     public JsonObject toJson() {
@@ -78,23 +99,55 @@ class Skip implements Action {
 }
 
 class Replace implements Action {
-    public final List<TokenS> old;
+    public final PVector<TokenS> original;
     public final List<MapSeg> mapping;
-    public final Set<String> disables;
+    public final PSet<String> disables;
+    public PVector<TokenS> processed;
 
-    public Replace(List<TokenS> old, List<MapSeg> mapping, Set<String> disables) {
-        this.old = old;
+    public Replace(PVector<TokenS> original, List<MapSeg> mapping, PSet<String> disables) {
+        this.original = original;
         this.mapping = mapping;
         this.disables = disables;
+    }
+
+    @Override
+    public PVector<TokenS> skipped() {
+        return TreePVector.empty();
+    }
+
+    @Override
+    public PVector<TokenS> original() {
+        return original;
+    }
+
+    @Override
+    public PVector<TokenS> processed() {
+        if (processed == null) {
+            processed = TreePVector.empty();
+            PBag<String> disablesBag = HashTreePBag.from(disables);
+            for (MapSeg seg : mapping) {
+                if (seg instanceof New) {
+                    for (Token tok : ((New) seg).tokens) {
+                        processed = processed.plus(new TokenS(tok, disablesBag));
+                    }
+                } else {
+                    Sub sub = ((Sub) seg);
+                    for (Action action : sub.actions.actions) {
+                        processed = processed.plusAll(action.processed());
+                    }
+                }
+            }
+        }
+        return processed;
     }
 
     public JsonObject toJson() {
         JsonObject result = new JsonObject();
         JsonArray replace = new JsonArray();
-        for (TokenS token:old) {
+        for (TokenS token: original) {
             replace.add(token.toJson());
         }
-        result.add("repl", replace);
+        result.add("orgn", replace);
         JsonArray mpn = new JsonArray();
         for (MapSeg seg: mapping) {
             mpn.add(seg.toJson());
@@ -116,9 +169,9 @@ class Replace implements Action {
 
 class TokenS {
     public final Token token;
-    public final Set<String> disables;
+    public final PBag<String> disables;
 
-    public TokenS(Token token, Set<String> disables) {
+    public TokenS(Token token, PBag<String> disables) {
         this.token = token;
         this.disables = disables;
     }
