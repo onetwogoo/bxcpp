@@ -92,7 +92,7 @@ public class CppReader extends Reader implements Closeable {
             if (token == null)
                 return false;
             while (idx >= token.length()) {
-                Token tok = cpp.token();
+                Token tok = cpp.token().token;
                 switch (tok.getType()) {
                     case EOF:
                         token = null;

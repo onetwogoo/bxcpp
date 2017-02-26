@@ -100,13 +100,13 @@ public class FileLexerSource extends InputLexerSource {
         return "file " + getPath();
     }
 
-    public List<TokenS> producedTokens;
+    public List<Token> producedTokens;
 
     @Override
     public TokenS token() throws IOException, LexerException {
         TokenS tokenS = super.token();
         if (producedTokens != null && tokenS.token.getType() != Token.EOF) {
-            producedTokens.add(tokenS);
+            producedTokens.add(tokenS.token);
         }
         return tokenS;
     }

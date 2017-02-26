@@ -857,11 +857,14 @@ public class Preprocessor implements Closeable {
         }
 
         if (m == __LINE__) {
-            TokenS[] tokens = new TokenS[]{new TokenS(new Token(NUMBER,
-                    orig.token.getLine(), orig.token.getColumn(),
-                    Integer.toString(orig.token.getLine()),
-                    new NumericValue(10, Integer.toString(orig.token.getLine()))), disables};
-                collector.replaceWithToken(Arrays.asList(tokens[0].token), disables);
+            TokenS[] tokens = new TokenS[]{
+                    new TokenS(
+                            new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(),
+                                    Integer.toString(orig.token.getLine()),
+                                    new NumericValue(10, Integer.toString(orig.token.getLine()))),
+                            disables)
+            };
+            collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
         } else if (m == __FILE__) {
             StringBuilder buf = new StringBuilder("\"");
@@ -885,25 +888,29 @@ public class Preprocessor implements Closeable {
             buf.append("\"");
             String text = buf.toString();
 
-            TokenS[] tokens = new TokenS[]{new TokenS(new Token(STRING,
-                    orig.token.getLine(), orig.token.getColumn(),
-                    text, text), disables)};
-                collector.replaceWithToken(Arrays.asList(tokens[0].token), disables);
+            TokenS[] tokens = new TokenS[]{
+                    new TokenS(
+                            new Token(STRING, orig.token.getLine(), orig.token.getColumn(), text, text),
+                            disables)
+            };
+            collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
         } else if (m == __COUNTER__) {
             /* This could equivalently have been done by adding
              * a special Macro subclass which overrides getTokens(). */
             int value = this.counter++;
-            TokenS[] tokens = new TokenS[]{new TokenS(new Token(NUMBER,
-                    orig.token.getLine(), orig.token.getColumn(),
-                    Integer.toString(value),
-                    new NumericValue(10, Integer.toString(value))), disables)};
-                collector.replaceWithToken(Arrays.asList(tokens[0].token), disables);
+            TokenS[] tokens = new TokenS[]{
+                    new TokenS(
+                            new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(), Integer.toString(value),
+                                    new NumericValue(10, Integer.toString(value))),
+                            disables)
+            };
+            collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
             push_source(new FixedTokenSource(tokens), true);
         } else {
             List<MapSeg> mapping = new ArrayList<MapSeg>();
             MacroTokenSource macroTokenSource = new MacroTokenSource(m, args, mapping, disables);
-                collector.replaceWithMapSeg(mapping, disables);
+            collector.replaceWithMapping(mapping, disables);
             push_source(macroTokenSource, true);
         }
 
@@ -942,11 +949,10 @@ public class Preprocessor implements Closeable {
                         expansion.add(space);
                         collector.directInsert(
                                 new Replace(
-                                        Collections.<TokenS>emptyList(),
-                                        Collections.<MapSeg>singletonList(new New(Collections.singletonList(Token.space))),
-                                        Collections.<String>emptySet()));
-                        collector.directInsert(
-                                new Skip(new TokenS(Token.space, Collections.emptySet())));
+                                        Collections.emptyList(),
+                                        Collections.singletonList(new New(Collections.singletonList(space.token))),
+                                        space.disables));
+                        collector.directInsert(new Skip(space));
                     }
                     expansion.add(tok);
                     space = null;
@@ -1168,7 +1174,7 @@ public class Preprocessor implements Closeable {
      * @return true if the file was successfully included, false otherwise.
      * @throws IOException if an I/O error occurs.
      */
-    protected boolean include(@Nonnull VirtualFile file, List<TokenS> producedTokens)
+    protected boolean include(@Nonnull VirtualFile file, List<Token> producedTokens)
             throws IOException {
         // System.out.println("Try to include " + ((File)file).getAbsolutePath());
         if (!file.isFile())
@@ -1190,7 +1196,7 @@ public class Preprocessor implements Closeable {
      * @return true if the file was successfully included, false otherwise.
      * @throws IOException if an I/O error occurs.
      */
-    protected boolean include(@Nonnull Iterable<String> path, @Nonnull String name, List<TokenS> producedTokens)
+    protected boolean include(@Nonnull Iterable<String> path, @Nonnull String name, List<Token> producedTokens)
             throws IOException {
         for (String dir : path) {
             VirtualFile file = getFileSystem().getFile(dir, name);
@@ -1208,7 +1214,7 @@ public class Preprocessor implements Closeable {
      */
     private void include(
             @CheckForNull String parent, int line,
-            @Nonnull String name, boolean quoted, boolean next, List<TokenS> producedTokens)
+            @Nonnull String name, boolean quoted, boolean next, List<Token> producedTokens)
             throws IOException,
             LexerException {
         if (name.startsWith("/")) {
@@ -1318,15 +1324,18 @@ public class Preprocessor implements Closeable {
             }
 
             /* Do the inclusion. */
-            List<TokenS> producedTokens = new ArrayList<TokenS>();
+            List<Token> producedTokens = new ArrayList<>();
             include(source.getPath(), tok.token.getLine(), name, quoted, next, producedTokens);
-            collector.replaceWith(producedTokens);
+            collector.replaceWithNewTokens(producedTokens,Collections.emptySet());
 
             /* 'tok' is the 'nl' after the include. We use it after the
              * #line directive. */
             if (getFeature(Feature.LINEMARKERS))
                 return new TokenS(line_token(1, source.getName(), " 1"), Collections.emptySet());
-            producedTokens.add(tok);
+
+            // If a.h is x y z, it actually replaces #include <a.h>\n with \nx y z.
+            // So we prepend the \n at the beginning of producedTokens
+            producedTokens.add(tok.token);
             collector.directInsert(new Skip(tok));
             return tok;
         } finally {
@@ -1361,7 +1370,7 @@ public class Preprocessor implements Closeable {
     private TokenS pragma()
             throws IOException,
             LexerException {
-        Token name;
+        TokenS name;
 
         NAME:
         for (;;) {
@@ -1387,7 +1396,7 @@ public class Preprocessor implements Closeable {
                     name = tok;
                     break NAME;
                 default:
-                    warning(tok,
+                    warning(tok.token,
                             "Illegal #" + "pragma " + tok.token.getText());
                     return source_skipline(false);
             }
@@ -1421,7 +1430,7 @@ public class Preprocessor implements Closeable {
             }
         }
 
-        pragma(name, value);
+        pragma(name.token, value);
 
         return tok;	/* The NL. */
 
@@ -1642,7 +1651,7 @@ public class Preprocessor implements Closeable {
                 break;
             case IDENTIFIER:
                 if (warnings.contains(Warning.UNDEF))
-                    warning(tok, "Undefined token '" + tok.token.getText()
+                    warning(tok.token, "Undefined token '" + tok.token.getText()
                             + "' encountered in conditional.");
                 lhs = 0;
                 break;
@@ -1841,7 +1850,7 @@ public class Preprocessor implements Closeable {
                         }
                         if (!isActive()) {
                             tok = new TokenS(toWhitespace(tok.token), tok.disables);
-                            collector.replaceWithToken(Collections.singletonList(tok.token), tok.disables);
+                            collector.replaceWithNewTokens(Collections.singletonList(tok.token), tok.disables);
                             collector.directInsert(new Skip(tok));
                             return tok;
                         }
@@ -1850,7 +1859,7 @@ public class Preprocessor implements Closeable {
                             return tok;
                         }
                         tok = new TokenS(toWhitespace(tok.token), tok.disables);
-                        collector.replaceWithToken(Collections.singletonList(tok.token), tok.disables);
+                        collector.replaceWithNewTokens(Collections.singletonList(tok.token), tok.disables);
                         collector.directInsert(new Skip(tok));
                         return tok;
                     default:
@@ -2217,7 +2226,7 @@ public class Preprocessor implements Closeable {
                                 collector.skipLast();
                                 return ret;
                             }
-                            Token ret = pragma();
+                            TokenS ret = pragma();
                             collector.skipLast();
                             return ret;
                         // break;

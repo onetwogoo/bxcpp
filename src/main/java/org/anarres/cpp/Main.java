@@ -26,6 +26,8 @@ import com.google.gson.GsonBuilder;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,37 +51,35 @@ public class Main {
     }
 
     static class Result {
-        List<Token> original;
-        List<Token> produced = new ArrayList<Token>();
+        List<TokenS> original;
+        List<TokenS> produced = new ArrayList<>();
         ActionSequence actions;
     }
 
     public static void main(String[] args) throws Exception {
         Result result = preprocess(args);
-//        System.out.println(result.original);
-        System.out.println(result.produced);
-//        System.out.println(result.actions.toJson());
+        System.out.printf("original: %s\n", result.original);
+        System.out.printf("produced: %s\n", result.produced);
+        FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
+//        System.out.printf("actions: %s\n", result.actions);
 
-        Deque<TokenS> input = new LinkedList<>();
-        for (Token token: result.original) {
-            input.add(new TokenS(token, Collections.emptySet()));
+        Deque<TokenS> input = new LinkedList<>(result.original);
+
+        List<TokenS> replayed = replay(input,result.actions);
+        System.out.printf("replayed: %s\n", replayed);
+
+        for (int i = 0; i < result.produced.size() && i < replayed.size(); i++) {
+            TokenS exp = replayed.get(i);
+            TokenS act = result.produced.get(i);
+            if (!exp.equals(act)) {
+                System.out.println("Replayed " + exp + " produced " + act);
+            }
         }
-
-//        List<TokenS> expected = replay(input,result.actions);
-////        System.out.println(expected);
-//
-//        for (int i = 0; i < result.produced.size() && i < expected.size(); i++) {
-//            Token exp = expected.get(i).token;
-//            Token act = result.produced.get(i);
-//            if (! exp.equals(act)) {
-//                System.out.println("Expected " + exp + " actual " + act);
-//            }
-//        }
-//        if (expected.size() > result.produced.size()) {
-//            System.out.println("More tokens in expected");
-//        } else if (expected.size() < result.produced.size()) {
-//            System.out.println("More tokens in produced");
-//        }
+        if (replayed.size() > result.produced.size()) {
+            System.out.println("More tokens in replayed");
+        } else if (replayed.size() < result.produced.size()) {
+            System.out.println("More tokens in produced");
+        }
     }
 
     static List<TokenS> replay(Deque<TokenS> input, ActionSequence actions) {
@@ -90,7 +90,7 @@ public class Main {
                 TokenS actual = ((Skip)action).token;
                 TokenS expected = input.removeFirst();
                 if (!expected.equals(actual)) {
-                    throw new RuntimeException("Expected " + expected + " skip " + actual + " instead\n" + input);
+                    throw new RuntimeException("Skipping " + actual + ", found " + expected + " input " +input);
                 }
                 result.add(actual);
             } else {
@@ -171,6 +171,7 @@ public class Main {
         Preprocessor pp = new Preprocessor();
         pp.addFeature(Feature.DIGRAPHS);
         pp.addFeature(Feature.TRIGRAPHS);
+        pp.addFeature(Feature.PRAGMA_ONCE);
         //pp.addFeature(Feature.LINEMARKERS);
         pp.addWarning(Warning.IMPORT);
         pp.setListener(new DefaultPreprocessorListener());
@@ -237,10 +238,10 @@ public class Main {
             Result result = new Result();
             pp.collector = new ActionCollector(pp, pp.inputs);
             for (;;) {
-                Token tok = pp.token();
+                TokenS tok = pp.token();
                 if (tok == null)
                     break;
-                if (tok.getType() == Token.EOF)
+                if (tok.token.getType() == Token.EOF)
                     break;
                 result.produced.add(tok);
             }

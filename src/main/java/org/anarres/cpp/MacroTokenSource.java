@@ -79,8 +79,8 @@ import static org.anarres.cpp.Token.*;
     }
 
     private void concat(@Nonnull StringBuilder buf, @Nonnull Argument arg) {
-        for (Token tok : arg) {
-            buf.append(tok.getText());
+        for (TokenS tok : arg) {
+            buf.append(tok.token.getText());
         }
     }
 
@@ -205,7 +205,7 @@ import static org.anarres.cpp.Token.*;
                             "Unexpected paste token";
                     Set<String> disables = new HashSet<>(tok.disables);
                     disables.addAll(this.disables);
-                    tok.disables = Collections.unmodifiableSet(disables);
+                    tok = new TokenS(tok.token, Collections.unmodifiableSet(disables));
                     return tok;
                 }
                 arg = null;

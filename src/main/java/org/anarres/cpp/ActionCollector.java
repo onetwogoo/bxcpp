@@ -88,11 +88,11 @@ public class ActionCollector {
     }
 
     /**
-     * Replace all tokens with producedTokens, which may be filled later
+     * Replace all tokens with newTokens, which may be filled later
      */
-    public void replaceWithToken(List<Token> newTokens, Set<String> disables) {
+    public void replaceWithNewTokens(List<Token> newTokens, Set<String> disables) {
         if (pp.collectOnly) return;
-        actions.actions.add(new Replace(currentTokens, Collections.<MapSeg>singletonList(
+        actions.actions.add(new Replace(currentTokens, Collections.singletonList(
                 new New(newTokens)
         ), disables));
         actions.environments.add(pp.getCurrentState());
@@ -102,10 +102,10 @@ public class ActionCollector {
     /**
      * Replace all tokens with a mapping, which will be filled later
      */
-    public void replaceWithMapSeg(List<MapSeg> mapping, Set<String> disables) {
+    public void replaceWithMapping(List<MapSeg> mapping, Set<String> disables) {
         if (pp.collectOnly) return;
         actions.actions.add(new Replace(currentTokens, mapping, disables));
         actions.environments.add(pp.getCurrentState());
-        currentTokens = new ArrayList<TokenS>();
+        currentTokens = new ArrayList<>();
     }
 }

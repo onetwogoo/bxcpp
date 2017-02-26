@@ -8,6 +8,7 @@ class Environment {
     public final int counter;
     public final Stack<State> states;
     public final List<String> onceseenpaths;
+
     Environment(Map<String, Macro> macros,
         Stack<State> states, int counter, List<String> onceseenpaths) {
         this.macros = macros;
@@ -36,8 +37,8 @@ class Environment {
 }
 
 class ActionSequence {
-    public List<Action> actions = new ArrayList<Action>();
-    public List<Environment> environments = new ArrayList<Environment>();
+    public final List<Action> actions = new ArrayList<Action>();
+    public final List<Environment> environments = new ArrayList<Environment>();
 
     public JsonArray toJson() {
         JsonArray result = new JsonArray();
@@ -46,6 +47,11 @@ class ActionSequence {
         }
         return result;
     }
+
+    @Override
+    public String toString() {
+        return toJson().toString();
+    }
 }
 
 interface Action {
@@ -53,7 +59,7 @@ interface Action {
 }
 
 class Skip implements Action {
-    public TokenS token;
+    public final TokenS token;
 
     public Skip(TokenS token) {
         this.token = token;
@@ -72,9 +78,9 @@ class Skip implements Action {
 }
 
 class Replace implements Action {
-    public List<TokenS> old;
-    public List<MapSeg> mapping;
-    public Set<String> disables;
+    public final List<TokenS> old;
+    public final List<MapSeg> mapping;
+    public final Set<String> disables;
 
     public Replace(List<TokenS> old, List<MapSeg> mapping, Set<String> disables) {
         this.old = old;
@@ -110,7 +116,7 @@ class Replace implements Action {
 
 class TokenS {
     public final Token token;
-    public Set<String> disables;
+    public final Set<String> disables;
 
     public TokenS(Token token, Set<String> disables) {
         this.token = token;
@@ -156,8 +162,8 @@ interface MapSeg {
 }
 
 class Sub implements MapSeg {
-    public List<Integer> indicies;
-    public ActionSequence actions;
+    public final List<Integer> indicies;
+    public final ActionSequence actions;
 
     public Sub(List<Integer> indicies, ActionSequence actions) {
         this.indicies = indicies;
@@ -177,7 +183,7 @@ class Sub implements MapSeg {
 }
 
 class New implements MapSeg {
-    public List<Token> tokens;
+    public final List<Token> tokens;
 
     public New(List<Token> tokens) {
         this.tokens = tokens;
