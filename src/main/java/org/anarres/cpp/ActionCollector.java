@@ -6,19 +6,21 @@ import org.pcollections.PVector;
 import org.pcollections.TreePVector;
 
 import java.util.*;
+import java.util.function.Function;
 
 public class ActionCollector {
     /* Recording actions */
     public List<TokenS> original = new ArrayList<>();
-    public ActionSequence actions = new ActionSequence();
+    public List<Action> actions = new ArrayList<>();
     private List<TokenS> currentTokens = new ArrayList<>();
     private Preprocessor pp;
     private List<Source> rootSources;
+    public Environment environment;
 
     public ActionCollector(Preprocessor pp, List<Source> rootSources) {
         this.pp = pp;
         this.rootSources = new ArrayList<>(rootSources);
-        actions.environments.add(pp.getCurrentState());
+        environment = pp.getCurrentState();
     }
 
     public void getToken(TokenS token, Source source) {
@@ -56,13 +58,13 @@ public class ActionCollector {
 
     public void directInsert(Action action) {
         if (pp.collectOnly) return;
-        actions.actions.add(action);
-        actions.environments.add(pp.getCurrentState());
+        actions.add(action);
+        environment = pp.getCurrentState();
     }
 
-    public void revert(int index, Action newAction) {
+    public void revert(int index, Function<Action, Action> replaceFn) {
         if (pp.collectOnly) return;
-        actions.actions.set(index, newAction);
+        actions.set(index, replaceFn.apply(actions.get(index)));
     }
 
     /**
@@ -77,11 +79,11 @@ public class ActionCollector {
         TokenS last = currentTokens.get(currentTokens.size() - 1);
         if (currentTokens.size() > 1) {
             currentTokens.remove(currentTokens.size() - 1);
-            actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
-            actions.environments.add(pp.getCurrentState());
+            actions.add(new Replace(environment, TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
+            environment = pp.getCurrentState();
         }
-        actions.actions.add(new Skip(last));
-        actions.environments.add(pp.getCurrentState());
+        actions.add(new Skip(environment, last));
+        environment = pp.getCurrentState();
         currentTokens = new ArrayList<>();
     }
 
@@ -92,10 +94,11 @@ public class ActionCollector {
     public int delete() {
         if (pp.collectOnly) return -1;
         if (!currentTokens.isEmpty()) {
-            actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
-            actions.environments.add(pp.getCurrentState());
+            actions.add(new Replace(environment, TreePVector.from(currentTokens), Collections.<MapSeg>emptyList(), Empty.set()));
+            environment = pp.getCurrentState();
+
             currentTokens = new ArrayList<>();
-            return actions.actions.size() - 1;
+            return actions.size() - 1;
         }
         return -1;
     }
@@ -105,10 +108,10 @@ public class ActionCollector {
      */
     public void replaceWithNewTokens(List<Token> newTokens, PSet<String> disables) {
         if (pp.collectOnly) return;
-        actions.actions.add(new Replace(TreePVector.from(currentTokens), Collections.singletonList(
+        actions.add(new Replace(environment, TreePVector.from(currentTokens), Collections.singletonList(
                 new New(newTokens)
         ), disables));
-        actions.environments.add(pp.getCurrentState());
+        environment = pp.getCurrentState();
         currentTokens = new ArrayList<>();
     }
 
@@ -117,8 +120,8 @@ public class ActionCollector {
      */
     public void replaceWithMapping(List<MapSeg> mapping, PSet<String> disables) {
         if (pp.collectOnly) return;
-        actions.actions.add(new Replace(TreePVector.from(currentTokens), mapping, disables));
-        actions.environments.add(pp.getCurrentState());
+        actions.add(new Replace(environment, TreePVector.from(currentTokens), mapping, disables));
+        environment = pp.getCurrentState();
         currentTokens = new ArrayList<>();
     }
 }

@@ -56,7 +56,7 @@ public class Main {
     static class Result {
         List<TokenS> original;
         List<TokenS> produced = new ArrayList<>();
-        ActionSequence actions;
+        List<Action> actions;
     }
 
     public static void main(String[] args) throws Exception {
@@ -85,9 +85,9 @@ public class Main {
         }
     }
 
-    static List<TokenS> replay(Deque<TokenS> input, ActionSequence actions) {
+    static List<TokenS> replay(Deque<TokenS> input, List<Action> actions) {
         List<TokenS> result = new ArrayList<TokenS>();
-        for (Action action : actions.actions) {
+        for (Action action : actions) {
 //            System.out.println("Action:" + action + " rest:" + input);
             if (action instanceof Skip) {
                 TokenS actual = ((Skip)action).token;

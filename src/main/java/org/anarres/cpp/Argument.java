@@ -30,7 +30,7 @@ import javax.annotation.Nonnull;
 /* pp */ class Argument extends ArrayList<TokenS> {
 
     public List<Integer> indicies = new ArrayList<Integer>();
-    public ActionSequence actions;
+    public List<Action> actions;
     private List<TokenS> expansion;
 
     public Argument() {

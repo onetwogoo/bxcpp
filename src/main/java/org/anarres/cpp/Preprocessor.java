@@ -926,7 +926,7 @@ public class Preprocessor implements Closeable {
     /* pp */ List<TokenS> expand(@Nonnull List<TokenS> arg)
             throws IOException,
             LexerException {
-        List<TokenS> expansion = new ArrayList<TokenS>();
+        List<TokenS> expansion = new ArrayList<>();
         TokenS space = null;
         int deleteSpaceActionIndex = -1;
 
@@ -949,7 +949,8 @@ public class Preprocessor implements Closeable {
                 default:
                     if (space != null && !expansion.isEmpty()) {
                         expansion.add(space);
-                        collector.revert(deleteSpaceActionIndex, new Skip(space));
+                        final TokenS finalSpace = space;
+                        collector.revert(deleteSpaceActionIndex, action -> new Skip(action.beforeEnv, finalSpace));
                     }
                     expansion.add(tok);
                     space = null;
@@ -1333,7 +1334,7 @@ public class Preprocessor implements Closeable {
             // If a.h is x y z, it actually replaces #include <a.h>\n with \nx y z.
             // So we prepend the \n at the beginning of producedTokens
             producedTokens.add(tok.token);
-            collector.directInsert(new Skip(tok));
+            collector.directInsert(new Skip(collector.environment, tok));
             return tok;
         } finally {
             lexer.setInclude(false);
@@ -1848,7 +1849,7 @@ public class Preprocessor implements Closeable {
                         if (!isActive()) {
                             tok = new TokenS(toWhitespace(tok.token), Empty.bag());
                             collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
-                            collector.directInsert(new Skip(tok));
+                            collector.directInsert(new Skip(collector.environment, tok));
                             return tok;
                         }
                         if (getFeature(Feature.KEEPCOMMENTS)) {
@@ -1857,7 +1858,7 @@ public class Preprocessor implements Closeable {
                         }
                         tok = new TokenS(toWhitespace(tok.token), Empty.bag());
                         collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
-                        collector.directInsert(new Skip(tok));
+                        collector.directInsert(new Skip(collector.environment, tok));
                         return tok;
                     default:
                         // Return NL to preserve whitespace.

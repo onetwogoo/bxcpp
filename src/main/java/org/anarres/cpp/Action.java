@@ -38,36 +38,23 @@ class Environment {
     }
 }
 
-class ActionSequence {
-    public final List<Action> actions = new ArrayList<Action>();
-    public final List<Environment> environments = new ArrayList<Environment>();
-
-    public JsonArray toJson() {
-        JsonArray result = new JsonArray();
-        for (Action act: actions) {
-            result.add(act.toJson());
-        }
-        return result;
+abstract class Action {
+    public final Environment beforeEnv;
+    public Action(Environment beforeEnv) {
+        this.beforeEnv = beforeEnv;
     }
 
-    @Override
-    public String toString() {
-        return toJson().toString();
-    }
+    abstract PVector<TokenS> skipped();
+    abstract PVector<TokenS> original();
+    abstract PVector<TokenS> processed();
+    abstract JsonObject toJson();
 }
 
-interface Action {
-    PVector<TokenS> skipped();
-    PVector<TokenS> original();
-    PVector<TokenS> processed();
-
-    JsonObject toJson();
-}
-
-class Skip implements Action {
+class Skip extends Action {
     public final TokenS token;
 
-    public Skip(TokenS token) {
+    public Skip(Environment beforeEnv, TokenS token) {
+        super(beforeEnv);
         this.token = token;
     }
 
@@ -98,13 +85,14 @@ class Skip implements Action {
     }
 }
 
-class Replace implements Action {
+class Replace extends Action {
     public final PVector<TokenS> original;
     public final List<MapSeg> mapping;
     public final PSet<String> disables;
-    public PVector<TokenS> processed;
+    private PVector<TokenS> processed;
 
-    public Replace(PVector<TokenS> original, List<MapSeg> mapping, PSet<String> disables) {
+    public Replace(Environment beforeEnv, PVector<TokenS> original, List<MapSeg> mapping, PSet<String> disables) {
+        super(beforeEnv);
         this.original = original;
         this.mapping = mapping;
         this.disables = disables;
@@ -123,18 +111,10 @@ class Replace implements Action {
     @Override
     public PVector<TokenS> processed() {
         if (processed == null) {
-            processed = TreePVector.empty();
-            PBag<String> disablesBag = HashTreePBag.from(disables);
+            processed = Empty.vector();
             for (MapSeg seg : mapping) {
-                if (seg instanceof New) {
-                    for (Token tok : ((New) seg).tokens) {
-                        processed = processed.plus(new TokenS(tok, disablesBag));
-                    }
-                } else {
-                    Sub sub = ((Sub) seg);
-                    for (Action action : sub.actions.actions) {
-                        processed = processed.plusAll(action.processed());
-                    }
+                for (TokenS tokenS: seg.processed()) {
+                    processed = processed.plus(new TokenS(tokenS.token, tokenS.disables.plusAll(disables)));
                 }
             }
         }
@@ -211,35 +191,64 @@ class TokenS {
 }
 
 interface MapSeg {
+    PSequence<TokenS> processed();
     JsonObject toJson();
 }
 
 class Sub implements MapSeg {
     public final List<Integer> indicies;
-    public final ActionSequence actions;
+    public final List<Action> actions;
+    private PVector<TokenS> processed;
 
-    public Sub(List<Integer> indicies, ActionSequence actions) {
+    public Sub(List<Integer> indicies, List<Action> actions) {
         this.indicies = indicies;
         this.actions = actions;
     }
 
+    @Override
+    public PSequence<TokenS> processed() {
+        if (processed == null) {
+            processed = Empty.vector();
+            for (Action action: actions) {
+                processed = processed.plusAll(action.processed());
+            }
+        }
+        return processed;
+    }
+
     public JsonObject toJson() {
         JsonObject result = new JsonObject();
-        JsonArray indx = new JsonArray();
+        JsonArray idx = new JsonArray();
         for (int i: indicies) {
-            indx.add(new JsonPrimitive(i));
+            idx.add(new JsonPrimitive(i));
         }
-        result.add("indx", indx);
-        result.add("acts", actions.toJson());
+        result.add("idx", idx);
+        JsonArray acts = new JsonArray();
+        for (Action action: actions) {
+            acts.add(action.toJson());
+        }
+        result.add("acts", acts);
         return result;
     }
 }
 
 class New implements MapSeg {
     public final List<Token> tokens;
+    private PVector<TokenS> processed;
 
     public New(List<Token> tokens) {
         this.tokens = tokens;
+    }
+
+    @Override
+    public PSequence<TokenS> processed() {
+        if (processed == null) {
+            processed = Empty.vector();
+            for (Token token: tokens) {
+                processed.plus(new TokenS(token, Empty.bag()));
+            }
+        }
+        return processed;
     }
 
     public JsonObject toJson() {
