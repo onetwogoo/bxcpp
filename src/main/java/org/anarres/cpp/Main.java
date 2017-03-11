@@ -17,6 +17,7 @@
 package org.anarres.cpp;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.PrintStream;
 import java.util.*;
 import javax.annotation.Nonnull;
@@ -28,9 +29,7 @@ import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.pcollections.ConsPStack;
-import org.pcollections.Empty;
-import org.pcollections.PStack;
+import org.pcollections.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +53,7 @@ public class Main {
     }
 
     static class Result {
+        Preprocessor preprocessor;
         List<TokenS> original;
         List<TokenS> produced = new ArrayList<>();
         List<Action> actions;
@@ -63,9 +63,29 @@ public class Main {
         Result result = preprocess(args);
 //        System.out.printf("original: %s\n", result.original);
 //        System.out.printf("produced: %s\n", result.produced);
-        FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
 //        System.out.printf("actions: %s\n", result.actions);
+//        FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
 
+        if (!checkSelfConsistency(result)) return;
+        if (!checkIdentityChange(result)) return;
+
+//        PrintStream writer = new PrintStream("/Users/kaoet/Desktop/playback.txt");
+//        result.preprocessor.setCurrentState(result.actions.get(0).beforeEnv, ConsPStack.from(result.original));
+//        for (;;){
+//            TokenS token = result.preprocessor.token();
+//            writer.printf("t:%s rest:%s\n", token, result.preprocessor.getRestTokens());
+//            if (token.token.getType() == Token.EOF) {
+//                break;
+//            }
+//        }
+//        writer.close();
+//        if (true) return;
+
+
+    }
+
+    static boolean checkSelfConsistency(Result result) {
+        System.out.println("Checking self consistency");
         Deque<TokenS> input = new LinkedList<>(result.original);
 
         List<TokenS> replayed = replay(input,result.actions);
@@ -76,13 +96,41 @@ public class Main {
             TokenS act = result.produced.get(i);
             if (!exp.equals(act)) {
                 System.out.println("Replayed " + exp + " produced " + act);
+                return false;
             }
         }
         if (replayed.size() > result.produced.size()) {
             System.out.println("More tokens in replayed");
+            return false;
         } else if (replayed.size() < result.produced.size()) {
             System.out.println("More tokens in produced");
+            return false;
         }
+        return true;
+    }
+
+    static boolean checkIdentityChange(Result result) {
+        System.out.println("Checking identity change");
+        Backward backward = new Backward(result.preprocessor);
+        PVector<PSequence<TokenS>> changes = Empty.vector();
+        for (TokenS tokenS: result.produced) {
+            changes = changes.plus(TreePVector.singleton(tokenS));
+        }
+        List<PSequence<TokenS>> orignalChanges = backward.backward(changes, result.actions);
+        if (orignalChanges == null) {
+            System.out.println("Backward failure");
+            return false;
+        }
+        PVector<PSequence<TokenS>> expectedOriginalChagnes = Empty.vector();
+        for (TokenS tokenS: result.original) {
+            expectedOriginalChagnes = expectedOriginalChagnes.plus(TreePVector.singleton(tokenS));
+        }
+        if (!expectedOriginalChagnes.equals(orignalChanges)) {
+            System.out.println("Expected:" + expectedOriginalChagnes);
+            System.out.println("Got     :" + orignalChanges);
+            return false;
+        }
+        return true;
     }
 
     static List<TokenS> replay(Deque<TokenS> input, List<Action> actions) {
@@ -237,7 +285,8 @@ public class Main {
 
         try {
             Result result = new Result();
-            pp.collector = new ActionCollector(pp, pp.inputs);
+            result.preprocessor = pp;
+            pp.collector = new ActionCollectorImpl(pp, pp.inputs);
             for (;;) {
                 TokenS tok = pp.token();
                 if (tok == null)
@@ -246,8 +295,9 @@ public class Main {
                     break;
                 result.produced.add(tok);
             }
-            result.original = pp.collector.original;
-            result.actions = pp.collector.actions;
+            result.original = ((ActionCollectorImpl)pp.collector).original;
+            result.actions = ((ActionCollectorImpl)pp.collector).actions;
+            pp.collector = new ActionCollector();
             return result;
         } catch (Exception e) {
             StringBuilder buf = new StringBuilder("Preprocessor failed:\n");

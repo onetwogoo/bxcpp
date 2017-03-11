@@ -6,27 +6,18 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 
-class TargetState {
-    public Environment environment;
-    public PStack<Token> skipped;
-    public PStack<TokenS> rest;
-
-    public TargetState(Environment environment, PStack<Token> skipped, PStack<TokenS> rest) {
-        this.environment = environment;
-        this.skipped = skipped;
-        this.rest = rest;
-    }
-}
-
 class BackResult {
-    public PSequence<PSequence<TokenS>> originalChanges;
-    public PStack<TokenS> rightTokens;
+    public List<PSequence<TokenS>> originalChanges;
+    public FList<TokenS> rightTokens;
+    public TargetStates targetStates;
 
-    public BackResult(PSequence<PSequence<TokenS>> originalChanges, PStack<TokenS> rightTokens) {
+    public BackResult(List<PSequence<TokenS>> originalChanges, FList<TokenS> rightTokens, TargetStates targetStates) {
         this.originalChanges = originalChanges;
         this.rightTokens = rightTokens;
+        this.targetStates = targetStates;
     }
 }
 
@@ -39,34 +30,47 @@ public class Backward {
     }
 
     @Nullable
-    public PSequence<PSequence<TokenS>> backward(PSequence<PSequence<TokenS>> changes, List<Action> actions) {
-        PStack<PSequence<TokenS>> leftChanges = reverse(changes); // Changes on the left in reversed order
-        PStack<PSequence<TokenS>> rightChanges = Empty.stack();
+    public List<PSequence<TokenS>> backward(final List<PSequence<TokenS>> changes, final List<Action> actions) {
+        FList<PSequence<TokenS>> leftChanges = FList.fromReversed(changes); // Changes on the left in reversed order
+        FList<PSequence<TokenS>> rightChanges = FList.empty();
 
         // rightTokens is always flattened rightChanges
-        PStack<TokenS> rightTokens = Empty.stack();
+        FList<TokenS> rightTokens = FList.empty();
 
-        List<TargetState> targetStates = new ArrayList<>();
-        targetStates.add(new TargetState(null, Empty.stack(), Empty.stack()));
+        Iterator iter = rightTokens.iterator();
+
+        TargetStates targetStates = new TerminalState();
 
         for (int i = actions.size() - 1; i >= 0; i--) {
             Action action = actions.get(i);
 
             final int lenProcessed = action.processed().size();
             final int lenSkipped = action.skipped().size();
-            PSequence<PSequence<TokenS>> processedChanges = rightChanges.subList(0, lenProcessed);
-            PStack<PSequence<TokenS>> restChanges = rightChanges.subList(lenProcessed);
-            PSequence<PSequence<TokenS>> skippedChanges = reverse(leftChanges.subList(0, lenSkipped));
+//            if (changes.size() == 2) {
+//                System.out.println("Action:" + action);
+//                System.out.println("rightChanges:" + rightChanges);
+//                System.out.println("leftChanges:" + leftChanges);
+//                System.out.println();
+//            }
+            FList<PSequence<TokenS>> processedChanges = rightChanges.subList(0, lenProcessed);
+            FList<PSequence<TokenS>> restChanges = rightChanges.subList(lenProcessed);
+            List<PSequence<TokenS>> skippedChanges = leftChanges.reversedSubList(0, lenSkipped);
             leftChanges = leftChanges.subList(lenSkipped);
-            PStack<TokenS> restTokens = rightTokens.subList(flatten(processedChanges).size());
+            FList<TokenS> restTokens = rightTokens.subList(flattenSize(processedChanges));
 
             BackResult backResult = back(action, skippedChanges, processedChanges, targetStates, restTokens);
             if (backResult == null) {
                 return null;
             }
             rightTokens = backResult.rightTokens;
-            rightChanges = concat(skippedChanges, concat(backResult.originalChanges, restChanges));
+            targetStates = backResult.targetStates;
+            rightChanges = FList.concat(skippedChanges, FList.concat(backResult.originalChanges, restChanges));
+            System.out.println(i + " of " + actions.size());
         }
+
+//        if (changes.size() == 2) {
+//            System.out.println("Final right:" + rightChanges);
+//        }
 
         assert leftChanges.isEmpty();
         return rightChanges;
@@ -74,64 +78,100 @@ public class Backward {
 
     private BackResult back(
             Action action,
-            PSequence<PSequence<TokenS>> skippedChanges,
-            PSequence<PSequence<TokenS>> processedChanges,
-            List<TargetState> targetStates,
-            PStack<TokenS> restTokens) {
+            final List<PSequence<TokenS>> skippedChanges,
+            FList<PSequence<TokenS>> processedChanges,
+            TargetStates targetStates,
+            FList<TokenS> restTokens) {
 
         if (!skippedChanges.isEmpty()) {
-            List<Token> skippedTokens = new ArrayList<>();
-            for (PSequence<TokenS> change: skippedChanges) {
-                for (TokenS tokenS: change) {
+            ArrayList<Token> skippedTokens = new ArrayList<>();
+            for (PSequence<TokenS> change : skippedChanges) {
+                for (TokenS tokenS : change) {
                     skippedTokens.add(tokenS.token);
                 }
             }
-            for (TargetState state: targetStates) {
-                state.skipped = concat(skippedTokens, state.skipped);
-            }
+            targetStates = TargetStates.afterSkip(skippedTokens, targetStates);
         }
 
         for (Strategy strategy : strategies) {
-            PSequence<PSequence<TokenS>> originalChanges;
+            List<PSequence<TokenS>> originalChanges;
             if (action instanceof Skip) {
                 originalChanges = Empty.vector();
             } else if (action instanceof Replace) {
-                Replace replace = (Replace)action;
+                Replace replace = (Replace) action;
                 PVector<PSequence<TokenS>> withoutDisabled = Empty.vector();
-                for (PSequence<TokenS> change: processedChanges) {
+                for (PSequence<TokenS> change : processedChanges) {
                     PVector<TokenS> newChange = Empty.vector();
-                    for (TokenS tokenS: change) {
+                    for (TokenS tokenS : change) {
                         newChange = newChange.plus(new TokenS(tokenS.token, minusEach(tokenS.disables, replace.disables)));
                     }
                     withoutDisabled = withoutDisabled.plus(newChange);
                 }
                 originalChanges = strategy.back(replace, withoutDisabled);
+                if (originalChanges == null) {
+                    continue;
+                }
             } else {
                 throw new AssertionError("Unknown action type");
             }
 
-            PStack<TokenS> rightTokens = concat(flatten(skippedChanges), concat(flatten(originalChanges), restTokens));
+            FList<TokenS> rightTokens = FList.concat(flatten(skippedChanges), FList.concat(flatten(originalChanges), restTokens));
             if (tryForward(action.beforeEnv, rightTokens, targetStates)) {
-                targetStates.add(0, new TargetState(action.beforeEnv, Empty.stack(), rightTokens));
-                return new BackResult(originalChanges, rightTokens);
+                targetStates = new EnvAndRest(action.beforeEnv, rightTokens, targetStates);
+                return new BackResult(originalChanges, rightTokens, targetStates);
             }
         }
         return null;
     }
 
-    public boolean tryForward(Environment env, PStack<TokenS> tokens, List<TargetState> targetStates) {
-        throw new UnsupportedOperationException("Not implemented");
+    private boolean tryForward(Environment env, FList<TokenS> tokens, TargetStates targetStates) {
+        try {
+            pp.setCurrentState(env, tokens);
+            int step = 0;
+            for (; ; ) {
+                if (tokens != null) {
+                    System.out.println("Test step " + step + " env " + env + " rest " + tokens + " on\n" + targetStates);
+                    if (targetStates.matches(env, tokens)) {
+                        System.out.println("steps=" + step);
+                        System.out.println();
+                        return true;
+                    }
+                }
+
+                step++;
+
+                Token token = pp.token().token;
+                env = pp.getCurrentState(env);
+                if (token.getType() == Token.EOF) {
+                    if (tokens != null && tokens.isEmpty()) {
+                        System.out.println("Failed due to drain");
+                        return false;
+                    } else {
+                        tokens = FList.empty();
+                    }
+                } else {
+                    targetStates = targetStates.whenSkip(token);
+                    if (targetStates == null) {
+                        System.out.println("Failed due to skip bad token " + token);
+                        return false;
+                    }
+                    tokens = pp.getRestTokens();
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     interface Strategy {
         @Nullable
-        PSequence<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges);
+        List<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges);
     }
 
     class CancelAll implements Strategy {
         @Override
         @Nonnull
-        public PSequence<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
+        public List<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
             return Backward.makeReplaceChanges(replace.original, flatten(processedChanges));
         }
     }
@@ -139,9 +179,9 @@ public class Backward {
     class CancelRoot implements Strategy {
         @Nullable
         @Override
-        public PSequence<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
+        public List<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
             PVector<TokenS> backed = Empty.vector();
-            for (MapSeg seg: replace.mapping) {
+            for (MapSeg seg : replace.mapping) {
                 PSequence<PSequence<TokenS>> currentProcessedChanges = processedChanges.subList(0, seg.processed().size());
                 processedChanges = processedChanges.subList(seg.processed().size(), processedChanges.size());
 
@@ -151,9 +191,9 @@ public class Backward {
                     Sub sub = (Sub) seg;
 
                     List<TokenS> seq = Backward.flatten(currentProcessedChanges);
-                    TargetState targetState = new TargetState(null, ConsPStack.from(stripS(seq)), Empty.stack());
-                    if (tryForward(replace.beforeEnv, ConsPStack.from(seq), Collections.singletonList(targetState))) {
-                        PSequence<PSequence<TokenS>> currentOriginalChanges = backward(currentProcessedChanges, sub.actions);
+                    TargetStates targetStates = TargetStates.afterSkip(stripS(seq), new TerminalState());
+                    if (tryForward(replace.beforeEnv, FList.from(seq), targetStates)) {
+                        List<PSequence<TokenS>> currentOriginalChanges = backward(currentProcessedChanges, sub.actions);
                         if (currentOriginalChanges == null) {
                             return null;
                         }
@@ -163,7 +203,7 @@ public class Backward {
                         backed = backed.plusAll(Backward.flatten(currentProcessedChanges));
                     }
                 } else {
-                    assert false: "Unknown mapseg";
+                    throw new AssertionError("Unknown mapseg");
                 }
             }
             return Backward.makeReplaceChanges(replace.original, backed);
@@ -173,7 +213,7 @@ public class Backward {
     class PreserveRoot implements Strategy {
         @Nullable
         @Override
-        public PSequence<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
+        public List<PSequence<TokenS>> back(Replace replace, PSequence<PSequence<TokenS>> processedChanges) {
             List<PSequence<TokenS>> originalChanges = new ArrayList<>(Collections.nCopies(replace.original.size(), null));
 
             for (MapSeg seg : replace.mapping) {
@@ -181,20 +221,27 @@ public class Backward {
                 processedChanges = processedChanges.subList(seg.processed().size(), processedChanges.size());
 
                 if (seg instanceof New) {
-                    if (!currentProcessedChanges.equals(seg.processed())) {
+                    PSequence<PSequence<TokenS>> expectedChanges = Empty.vector();
+                    for (Token token : ((New) seg).tokens) {
+                        expectedChanges = expectedChanges.plus(TreePVector.singleton(new TokenS(token, Empty.bag())));
+                    }
+                    if (!currentProcessedChanges.equals(expectedChanges)) {
                         return null;
                     }
                 } else if (seg instanceof Sub) {
                     Sub sub = (Sub) seg;
-                    PSequence<PSequence<TokenS>> currentOriginalChanges = backward(currentProcessedChanges, sub.actions);
+                    List<PSequence<TokenS>> currentOriginalChanges = backward(currentProcessedChanges, sub.actions);
                     if (currentOriginalChanges == null) {
                         return null;
                     }
-                    assert currentOriginalChanges.size() == sub.indicies.size();
+                    if (currentOriginalChanges.size() != sub.indicies.size()) {
+                        throw new AssertionError();
+                    }
 
-                    for (int i = 0; i < sub.indicies.size(); i++) {
-                        int index = sub.indicies.get(i);
-                        PSequence<TokenS> change = currentOriginalChanges.get(i);
+                    int i = 0;
+                    for (PSequence<TokenS> change : currentOriginalChanges) {
+                        int index = sub.indicies.get(i++);
+
                         PSequence<TokenS> old = originalChanges.get(index);
                         if (old == null) {
                             originalChanges.set(index, change);
@@ -203,7 +250,7 @@ public class Backward {
                         }
                     }
                 } else {
-                    assert false : "Unexpected seg type";
+                    throw new AssertionError("Unexpected seg type");
                 }
             }
 
@@ -212,76 +259,50 @@ public class Backward {
                     originalChanges.set(i, TreePVector.singleton(replace.original.get(i)));
                 }
             }
-            return TreePVector.from(originalChanges);
+            return originalChanges;
         }
     }
 
     public static <E> PBag<E> minusEach(PBag<E> bag, PSet<E> set) {
-        for (E e: set) {
+        for (E e : set) {
             bag = bag.minus(e);
         }
         return bag;
     }
 
-    public static <E> PStack<E> reverse(final List<E> list) {
-        PStack<E> rev = ConsPStack.empty();
-        for (E e : list) {
-            rev = rev.plus(e);
-        }
-        return rev;
-    }
-
-    public static <E> PStack<E> concat(final List<E> seq, PStack<E> stack) {
-        for (E e: reverse(seq)) {
-            stack = stack.plus(e);
-        }
-        return stack;
-    }
-
-    // Efficient implementation of stack eqauls
-    public static <T> boolean equals(PStack<T> stack1, PStack<T> stack2) {
-        if (stack1.size() != stack2.size()) {
-            return false;
-        }
-
-        while (!stack1.isEmpty()) {
-            if (stack1 == stack2) {
-                return true;
-            }
-            if (!stack1.get(0).equals(stack2.get(0))) {
-                return false;
-            }
-            stack1 = stack1.subList(1);
-            stack2 = stack2.subList(1);
-        }
-        return true;
-    }
-
     public static List<TokenS> flatten(final List<PSequence<TokenS>> changes) {
         List<TokenS> result = new ArrayList<>();
-        for (PSequence<TokenS> change: changes) {
+        for (PSequence<TokenS> change : changes) {
             result.addAll(change);
         }
         return result;
     }
 
-    public static List<Token> stripS(final List<TokenS> tokens) {
-        List<Token> result = new ArrayList<>();
-        for (TokenS tokenS: tokens) {
+    public static int flattenSize(final List<PSequence<TokenS>> changes) {
+        int size = 0;
+        for (PSequence<TokenS> change : changes) {
+            size += change.size();
+        }
+        return size;
+    }
+
+    public static ArrayList<Token> stripS(final List<TokenS> tokens) {
+        ArrayList<Token> result = new ArrayList<>();
+        for (TokenS tokenS : tokens) {
             result.add(tokenS.token);
         }
         return result;
     }
 
-    public static PSequence<PSequence<TokenS>> makeReplaceChanges(final List<TokenS> from, final List<TokenS> to) {
-        if (from.isEmpty() && to.isEmpty()) return Empty.vector();
-        if (from.isEmpty()) {
-            throw new RuntimeException("unable to change from empty to non-empty");
+    public static ArrayList<PSequence<TokenS>> makeReplaceChanges(final List<TokenS> from, final List<TokenS> to) {
+        if (from.isEmpty() && to.isEmpty()) return new ArrayList<>();
+        assert !from.isEmpty() : "Change from empty to non-empty";
+
+        ArrayList<PSequence<TokenS>> result = new ArrayList<>();
+        result.add(TreePVector.from(to));
+        for (int i = 1; i < from.size(); i++) {
+            result.add(Empty.vector());
         }
-        PStack<PSequence<TokenS>> result = Empty.stack();
-        for (int i = 0; i < from.size() - 1; i++) {
-            result = result.plus(Empty.vector());
-        }
-        return result.plus(TreePVector.from(to));
+        return result;
     }
 }

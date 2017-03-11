@@ -16,6 +16,8 @@
  */
 package org.anarres.cpp;
 
+import com.google.gson.JsonPrimitive;
+
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import java.io.Serializable;
@@ -133,6 +135,8 @@ public final class Token implements Serializable {
      */
     @Override
     public String toString() {
+        return new JsonPrimitive(getText()).toString();
+        /*
         StringBuilder buf = new StringBuilder();
 
         buf.append('[').append(getTokenName(type));
@@ -151,6 +155,7 @@ public final class Token implements Serializable {
         if (value != null)
             buf.append('=').append(value);
         return buf.toString();
+        */
     }
 
     /**

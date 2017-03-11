@@ -93,13 +93,13 @@ public class Preprocessor implements Closeable {
     public List<Source> inputs;
 
     /* The fundamental engine. */
-    private Map<String, Macro> macros;
-    private Stack<State> states;
+    private PMap<String, Macro> macros;
+    private PStack<State> states;
     private Source source;
 
     /* Miscellaneous support. */
     private int counter;
-    private Set<String> onceseenpaths = new HashSet<String>();
+    private PSet<String> onceseenpaths = Empty.set();
     //private final List<VirtualFile> includes = new ArrayList<VirtualFile>();
 
     /* Support junk to make it work like cpp */
@@ -115,16 +115,18 @@ public class Preprocessor implements Closeable {
     public ActionCollector collector;
     public boolean collectOnly = false;
 
+    /* Source tokens */
+    private Stack<TokenS> source_token = new Stack<>();
+
+
     public Preprocessor() {
         this.inputs = new ArrayList<Source>();
 
-        this.macros = new HashMap<>();
-        macros.put(__LINE__.getName(), __LINE__);
-        macros.put(__FILE__.getName(), __FILE__);
-        macros.put(__COUNTER__.getName(), __COUNTER__);
-        this.macros = Collections.unmodifiableMap(this.macros);
-        this.states = new Stack<State>();
-        states.push(new State());
+        this.macros = Empty.<String,Macro>map()
+                .plus(__LINE__.getName(), __LINE__)
+                .plus(__FILE__.getName(), __FILE__)
+                .plus(__COUNTER__.getName(), __COUNTER__);
+        this.states = Empty.<State>stack().plus(new State());
         this.source = null;
 
         this.counter = 0;
@@ -138,13 +140,37 @@ public class Preprocessor implements Closeable {
         this.listener = null;
     }
 
-    Environment getCurrentState() {
-        Stack<State> newStates = new Stack<State>();
-        for (State s : states) {
-            newStates.add(s.clone());
+    public Environment getCurrentState(Environment oldEnv) {
+        if (oldEnv != null && oldEnv.macros == this.macros && oldEnv.states == this.states && oldEnv.counter == this.counter && oldEnv.onceseenpaths == this.onceseenpaths) {
+            return oldEnv;
         }
-        return new Environment(macros,
-                    newStates, counter, new ArrayList<String>(onceseenpaths));
+        return new Environment(macros, states, counter, onceseenpaths);
+    }
+
+    public void setCurrentState(Environment env, FList<TokenS> tokens) {
+        states = env.states;
+        macros = env.macros;
+        counter = env.counter;
+        onceseenpaths = env.onceseenpaths;
+
+        source = new RestTokenSource(tokens);
+        inputs = Collections.emptyList();
+        source_token = new Stack<>();
+    }
+
+    public FList<TokenS> getRestTokens() {
+        ArrayList<TokenS> prefix = new ArrayList<>();
+        for (Source source = this.source;; source = source.getParent()) {
+            if (source instanceof MacroTokenSource) {
+                MacroTokenSource macroTokenSource = (MacroTokenSource) source;
+                prefix.addAll(macroTokenSource.produced.subList(macroTokenSource.producedIndex, macroTokenSource.produced.size()));
+            } else if (source instanceof RestTokenSource) {
+                FList<TokenS> rest = ((RestTokenSource) source).rest;
+                return FList.concat(FList.fromReversed(source_token), FList.concat(prefix, rest));
+            } else {
+                return null;
+            }
+        }
     }
 
     public Preprocessor(@Nonnull Source initial) {
@@ -363,9 +389,7 @@ public class Preprocessor implements Closeable {
         if ("defined".equals(name))
             throw new LexerException("Cannot redefine name 'defined'");
 
-        Map<String,Macro> macros = new LinkedHashMap<String, Macro>(this.macros);
-        macros.put(m.getName(), m);
-        this.macros = Collections.unmodifiableMap(macros);
+        this.macros = this.macros.plus(name, m);
     }
 
     /**
@@ -499,21 +523,22 @@ public class Preprocessor implements Closeable {
 
     /* States */
     private void push_state() {
-        State top = states.peek();
-        states.push(new State(top));
+        State top = states.get(0);
+        states = states.plus(new State(top));
     }
 
     private void pop_state()
             throws LexerException {
-        State s = states.pop();
+        State s = states.get(0);
+        states = states.subList(1);
         if (states.isEmpty()) {
             error(0, 0, "#" + "endif without #" + "if");
-            states.push(s);
+            states = states.plus(s);
         }
     }
 
     private boolean isActive() {
-        State state = states.peek();
+        State state = states.get(0);
         return state.isParentActive() && state.isActive();
     }
 
@@ -600,9 +625,6 @@ public class Preprocessor implements Closeable {
         return new TokenS(line_token(s.getLine(), s.getName(), " 1"), Empty.bag());
     }
 
-    /* Source tokens */
-    private TokenS source_token;
-
     /* XXX Make this include the NL, and make all cpp directives eat
      * their own NL. */
     @Nonnull
@@ -623,9 +645,8 @@ public class Preprocessor implements Closeable {
     private TokenS source_token()
             throws IOException,
             LexerException {
-        if (source_token != null) {
-            TokenS tok = source_token;
-            source_token = null;
+        if (!source_token.isEmpty()) {
+            TokenS tok = source_token.pop();
             if (getFeature(Feature.DEBUG))
                 LOG.debug("Returning unget token " + tok);
             collector.getToken(tok, getSource());
@@ -660,10 +681,8 @@ public class Preprocessor implements Closeable {
     }
 
     private void source_untoken(TokenS tok) {
-        if (this.source_token != null)
-            throw new IllegalStateException("Cannot return two tokens");
         collector.ungetToken(tok, getSource());
-        this.source_token = tok;
+        this.source_token.push(tok);
     }
 
     private boolean isWhite(Token tok) {
@@ -718,9 +737,11 @@ public class Preprocessor implements Closeable {
 
         // System.out.println("pp: expanding " + m);
         if (m.isFunctionLike()) {
+            List<TokenS> gotTokens = new ArrayList<>();
             OPEN:
             for (;;) {
                 tok = source_token();
+                gotTokens.add(tok);
                 // System.out.println("pp: open: token is " + tok);
                 switch (tok.token.getType()) {
                     case WHITESPACE:	/* XXX Really? */
@@ -733,7 +754,8 @@ public class Preprocessor implements Closeable {
                     case '(':
                         break OPEN;
                     default:
-                        source_untoken(tok);
+                        for (int i = gotTokens.size()-1;i>=0;i--)
+                            source_untoken(gotTokens.get(i));
                         return false;
                 }
             }
@@ -840,9 +862,13 @@ public class Preprocessor implements Closeable {
 
                 for (Argument a : args) {
                     ActionCollector currentCollector =collector;
-                    collector = new ActionCollector(this, Collections.emptyList());
+                    if (collector instanceof ActionCollectorImpl) {
+                        collector = new ActionCollectorImpl(this, Collections.emptyList());
+                    }
                     a.expand(this);
-                    a.actions = collector.actions;
+                    if (collector instanceof ActionCollectorImpl) {
+                        a.actions = ((ActionCollectorImpl)collector).actions;
+                    }
                     collector = currentCollector;
                 }
 
@@ -1154,9 +1180,7 @@ public class Preprocessor implements Closeable {
             Macro m = getMacro(tok.token.getText());
             if (m != null) {
                 /* XXX error if predefined */
-                HashMap<String, Macro> macros = new HashMap<>(this.macros);
-                macros.remove(m.getName());
-                this.macros = Collections.unmodifiableMap(macros);
+                this.macros = this.macros.minus(m.getName());
             }
         }
         return source_skipline(true);
@@ -1269,9 +1293,12 @@ public class Preprocessor implements Closeable {
     private TokenS include(boolean next)
             throws IOException,
             LexerException {
-        LexerSource lexer = (LexerSource) source;
-        try {
+        LexerSource lexer = null;
+        if (source instanceof LexerSource) {
+            lexer = (LexerSource) source;
             lexer.setInclude(true);
+        }
+        try {
             TokenS tok = token_nonwhite();
 
             String name;
@@ -1334,10 +1361,14 @@ public class Preprocessor implements Closeable {
             // If a.h is x y z, it actually replaces #include <a.h>\n with \nx y z.
             // So we prepend the \n at the beginning of producedTokens
             producedTokens.add(tok.token);
-            collector.directInsert(new Skip(collector.environment, tok));
+            if (collector instanceof ActionCollectorImpl) {
+                collector.directInsert(new Skip(((ActionCollectorImpl)collector).environment, tok));
+            }
             return tok;
         } finally {
-            lexer.setInclude(false);
+            if (lexer != null) {
+                lexer.setInclude(false);
+            }
         }
     }
 
@@ -1848,8 +1879,10 @@ public class Preprocessor implements Closeable {
                         }
                         if (!isActive()) {
                             tok = new TokenS(toWhitespace(tok.token), Empty.bag());
-                            collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
-                            collector.directInsert(new Skip(collector.environment, tok));
+                            if (collector instanceof ActionCollectorImpl) {
+                                collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
+                                collector.directInsert(new Skip(((ActionCollectorImpl)collector).environment, tok));
+                            }
                             return tok;
                         }
                         if (getFeature(Feature.KEEPCOMMENTS)) {
@@ -1857,8 +1890,10 @@ public class Preprocessor implements Closeable {
                             return tok;
                         }
                         tok = new TokenS(toWhitespace(tok.token), Empty.bag());
-                        collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
-                        collector.directInsert(new Skip(collector.environment, tok));
+                        if (collector instanceof ActionCollectorImpl) {
+                            collector.replaceWithNewTokens(Collections.singletonList(tok.token), Empty.set());
+                            collector.directInsert(new Skip(((ActionCollectorImpl)collector).environment, tok));
+                        }
                         return tok;
                     default:
                         // Return NL to preserve whitespace.
@@ -2073,7 +2108,7 @@ public class Preprocessor implements Closeable {
                             }
                             expr_token = null;
                             collectOnly = true;
-                            states.peek().setActive(expr(0) != 0);
+                            states = states.with(0, states.get(0).withActive(expr(0) != 0));
                             collectOnly = false;
                             tok = expr_token();	/* unget */
 
@@ -2088,7 +2123,7 @@ public class Preprocessor implements Closeable {
                             // break;
 
                         case PP_ELIF:
-                            State state = states.peek();
+                            State state = states.get(0);
                             if (false) {
                                 /* Check for 'if' */
                                 ;
@@ -2105,17 +2140,17 @@ public class Preprocessor implements Closeable {
                                 return ret;
                             } else if (state.isActive()) {
                                 /* The 'if' part got executed. */
-                                state.setParentActive(false);
+                                states = states.with(0, state.withParentActive(false));
                                 /* This is like # else # if but with
                                  * only one # end. */
-                                state.setActive(false);
+                                states = states.with(0, state.withActive(false));
                                 TokenS ret = source_skipline(false);
                                 collector.skipLast();
                                 return ret;
                             } else {
                                 expr_token = null;
                                 collectOnly = true;
-                                state.setActive(expr(0) != 0);
+                                states = states.with(0, state.withActive(expr(0) != 0));
                                 collectOnly = false;
                                 tok = expr_token();	/* unget */
 
@@ -2130,7 +2165,7 @@ public class Preprocessor implements Closeable {
                             // break;
 
                         case PP_ELSE:
-                            state = states.peek();
+                            state = states.get(0);
                             if (false)
 								/* Check for 'if' */ ;
                             else if (state.sawElse()) {
@@ -2140,8 +2175,7 @@ public class Preprocessor implements Closeable {
                                 collector.skipLast();
                                 return ret;
                             } else {
-                                state.setSawElse();
-                                state.setActive(!state.isActive());
+                                states = states.with(0, state.withSawElse().withActive(!state.isActive()));
                                 TokenS ret = source_skipline(warnings.contains(Warning.ENDIF_LABELS));
                                 collector.skipLast();
                                 return ret;
@@ -2168,7 +2202,7 @@ public class Preprocessor implements Closeable {
                                     String text = tok.token.getText();
                                     boolean exists
                                             = macros.containsKey(text);
-                                    states.peek().setActive(exists);
+                                    states = states.with(0, states.get(0).withActive(exists));
                                     TokenS ret = source_skipline(true);
                                     collector.skipLast();
                                     return ret;
@@ -2195,7 +2229,7 @@ public class Preprocessor implements Closeable {
                                     String text = tok.token.getText();
                                     boolean exists
                                             = macros.containsKey(text);
-                                    states.peek().setActive(!exists);
+                                    states = states.with(0, states.get(0).withActive(!exists));
                                     TokenS ret = source_skipline(true);
                                     collector.skipLast();
                                     return ret;

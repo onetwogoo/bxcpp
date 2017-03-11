@@ -6,13 +6,13 @@ import org.pcollections.*;
 import java.util.*;
 
 class Environment {
-    public final Map<String, Macro> macros;
+    public final PMap<String, Macro> macros;
     public final int counter;
-    public final Stack<State> states;
-    public final List<String> onceseenpaths;
+    public final PStack<State> states;
+    public final PSet<String> onceseenpaths;
 
-    Environment(Map<String, Macro> macros,
-        Stack<State> states, int counter, List<String> onceseenpaths) {
+    Environment(PMap<String, Macro> macros,
+        PStack<State> states, int counter, PSet<String> onceseenpaths) {
         this.macros = macros;
         this.states = states;
         this.counter = counter;
@@ -21,20 +21,52 @@ class Environment {
 
     @Override
     public boolean equals(Object obj) {
-        Environment o = (Environment)obj;
-        if (o.counter != this.counter)
-            return false;
-        if (!onceseenpaths.equals(o.onceseenpaths))
-            return false;
-        if (!macros.equals(o.macros))
-            return false;
-        if (states.size() != o.states.size())
-            return false;
-        for (int i = 0; i < states.size(); i ++) {
-            if (!states.get(i).equals(o.states.get(i)))
+        if (obj instanceof Environment) {
+            Environment o = (Environment) obj;
+            if (o.counter != this.counter)
                 return false;
+            if (!onceseenpaths.equals(o.onceseenpaths))
+                return false;
+            if (!macros.equals(o.macros))
+                return false;
+            if (!states.equals(o.states))
+                return false;
+            return true;
         }
-        return true;
+        return false;
+    }
+
+    public JsonObject toJson() {
+        JsonObject result = new JsonObject();
+        JsonArray macs = new JsonArray();
+        for (String name : macros.keySet()) {
+            if (!name.startsWith("__"))
+                macs.add(new JsonPrimitive(name));
+        }
+        if (macs.size() > 0) {
+            result.add("macs", macs);
+        }
+        if (counter > 0) {
+            result.addProperty("ctr", counter);
+        }
+        JsonArray stats = new JsonArray();
+        for (State state: states) {
+            stats.add(new JsonPrimitive(state.hashCode()));
+        }
+        result.add("stats", stats);
+        JsonArray once = new JsonArray();
+        for (String path: onceseenpaths) {
+            once.add(new JsonPrimitive(path));
+        }
+        if (once.size() > 0) {
+            result.add("once", once);
+        }
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return toJson().toString();
     }
 }
 
@@ -210,7 +242,7 @@ class Sub implements MapSeg {
         if (processed == null) {
             processed = Empty.vector();
             for (Action action: actions) {
-                processed = processed.plusAll(action.processed());
+                processed = processed.plusAll(action.skipped());
             }
         }
         return processed;
@@ -245,7 +277,7 @@ class New implements MapSeg {
         if (processed == null) {
             processed = Empty.vector();
             for (Token token: tokens) {
-                processed.plus(new TokenS(token, Empty.bag()));
+                processed = processed.plus(new TokenS(token, Empty.bag()));
             }
         }
         return processed;

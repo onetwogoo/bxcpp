@@ -16,7 +16,7 @@
  */
 package org.anarres.cpp;
 
-import java.io.Serializable;
+import javax.crypto.Mac;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.List;
  * for replacement. The replacement token stream may contain the
  * extra tokens {@link Token#M_ARG} and {@link Token#M_STRING}.
  */
-public class Macro implements Serializable {
+public class Macro {
 
     //private Source source;
     private String name;
@@ -185,4 +185,14 @@ public class Macro implements Serializable {
         return buf.toString();
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (obj instanceof Macro) {
+            Macro other = (Macro) obj;
+            // TODO(chengyufeng) Is this correct?
+            return other.name.equals(this.name);
+        }
+        return false;
+    }
 }

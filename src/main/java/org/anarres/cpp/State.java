@@ -16,18 +16,22 @@
  */
 package org.anarres.cpp;
 
-import java.io.Serializable;
+/* pp */ class State {
 
-/* pp */ class State implements Serializable, Cloneable{
-
-    boolean parent;
-    boolean active;
-    boolean sawElse;
+    public final boolean parent;
+    public final boolean active;
+    public final boolean sawElse;
 
     /* pp */ State() {
         this.parent = true;
         this.active = true;
         this.sawElse = false;
+    }
+
+    private State(boolean parent, boolean active, boolean sawElse) {
+        this.parent = parent;
+        this.active = active;
+        this.sawElse = sawElse;
     }
 
     /* pp */ State(State parent) {
@@ -37,28 +41,29 @@ import java.io.Serializable;
     }
 
     /* Required for #elif */
-    /* pp */ void setParentActive(boolean b) {
-        this.parent = b;
-    }
 
     /* pp */ boolean isParentActive() {
         return parent;
     }
 
-    /* pp */ void setActive(boolean b) {
-        this.active = b;
+    State withParentActive(boolean parentActive) {
+        return new State(parentActive, this.active, this.sawElse);
     }
 
     /* pp */ boolean isActive() {
         return active;
     }
 
-    /* pp */ void setSawElse() {
-        sawElse = true;
+    State withActive(boolean active) {
+        return new State(this.parent, active, this.sawElse);
     }
 
     /* pp */ boolean sawElse() {
         return sawElse;
+    }
+
+    State withSawElse() {
+        return new State(this.parent, this.active, true);
     }
 
     @Override
@@ -80,14 +85,5 @@ import java.io.Serializable;
         int activeValue = active ? 1 : 0;
         int sawElseValue = sawElse ? 1 : 0;
         return (parentValue << 2) | (activeValue << 1) | sawElseValue;
-    }
-
-    @Override
-    protected State clone() {
-        State obj = new State();
-        obj.parent = this.parent;
-        obj.active = this.active;
-        obj.sawElse = this.sawElse;
-        return obj;
     }
 }

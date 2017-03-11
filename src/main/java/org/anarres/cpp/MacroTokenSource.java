@@ -44,14 +44,24 @@ import static org.anarres.cpp.Token.*;
     private boolean insideArgument;
 
     private List<MapSeg> mapping;
+    public List<TokenS> produced;
+    public int producedIndex;
 
-    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping, PSet<String> disables) {
+    /* pp */ MacroTokenSource(@Nonnull Macro m, @Nonnull List<Argument> args, List<MapSeg> mapping, PSet<String> disables) throws IOException, LexerException {
         this.macro = m;
         this.tokens = m.getTokens().iterator();
         this.args = args;
         this.mapping = mapping;
         this.arg = null;
         this.disables = disables;
+
+        produced = new ArrayList<>();
+        for (TokenS token = _token(); token.token.getType() != Token.EOF; token = _token()) {
+            produced.add(token);
+            if (!insideArgument) {
+                mapping.add(new New(Collections.singletonList(token.token)));
+            }
+        }
     }
 
     /* XXX Called from Preprocessor [ugly]. */
@@ -186,14 +196,10 @@ import static org.anarres.cpp.Token.*;
     }
 
     @Override
-    public TokenS token()
-            throws IOException,
-            LexerException {
-        TokenS token = _token();
-        if (!insideArgument && token.token.getType() != Token.EOF) {
-            mapping.add(new New(Collections.singletonList(token.token)));
-        }
-        return token;
+    public TokenS token() {
+        if (producedIndex >= produced.size())
+            return new TokenS(new Token(Token.EOF, -1, -1, ""), Empty.bag());
+        return produced.get(producedIndex++);
     }
 
     private TokenS _token() throws IOException,LexerException {
@@ -221,11 +227,11 @@ import static org.anarres.cpp.Token.*;
             switch (tok.getType()) {
                 case M_STRING:
                     /* Use the nonexpanded arg. */
-                    idx = ((Integer) tok.getValue()).intValue();
+                    idx = (Integer) tok.getValue();
                     return new TokenS(stringify(tok, args.get(idx)), HashTreePBag.from(disables));
                 case M_ARG:
                     /* Expand the arg. */
-                    idx = ((Integer) tok.getValue()).intValue();
+                    idx = (Integer) tok.getValue();
                     // System.out.println("Pushing arg " + args.get(idx));
                     Argument argument = args.get(idx);
                     mapping.add(new Sub(argument.indicies, argument.actions));
