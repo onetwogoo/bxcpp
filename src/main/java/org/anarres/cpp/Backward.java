@@ -144,7 +144,7 @@ public class Backward {
                 env = pp.getCurrentState(env);
                 if (token.getType() == Token.EOF) {
                     if (tokens != null && tokens.isEmpty()) {
-                        System.out.println("Failed due to drain");
+//                        System.out.println("Failed due to drain");
                         return false;
                     } else {
                         tokens = FList.empty();
@@ -152,7 +152,7 @@ public class Backward {
                 } else {
                     targetStates = targetStates.whenSkip(token);
                     if (targetStates == null) {
-                        System.out.println("Failed due to skip bad token " + token);
+//                        System.out.println("Failed due to skip bad token " + token);
                         return false;
                     }
                     tokens = pp.getRestTokens();

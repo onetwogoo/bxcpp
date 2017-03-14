@@ -1376,13 +1376,14 @@ public class Preprocessor implements Closeable {
     protected void pragma_once(@Nonnull Token name)
             throws IOException, LexerException {
         Source s = this.source;
-        if (onceseenpaths.contains(s.getPath())) {
+        String file = name.getFile();
+        if (onceseenpaths.contains(file)) {
             TokenS mark = pop_source(true);
             // FixedTokenSource should never generate a linemarker on exit.
             if (mark != null)
                 push_source(new FixedTokenSource(Arrays.asList(mark)), true);
         } else {
-            onceseenpaths = onceseenpaths.plus(s.getPath());
+            onceseenpaths = onceseenpaths.plus(file);
         }
     }
 

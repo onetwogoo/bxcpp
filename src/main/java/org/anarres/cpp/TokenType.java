@@ -39,6 +39,29 @@ import static org.anarres.cpp.Token.*;
         }
     }
 
+    public static int findTokenType(String text) {
+        if (text.chars().allMatch(Character::isSpaceChar)) {
+            return WHITESPACE;
+        }
+        if (text.chars().allMatch(Character::isDigit)) {
+            return NUMBER;
+        }
+        if (text.chars().allMatch(Character::isLetterOrDigit)) {
+            return IDENTIFIER;
+        }
+        if (text.length() == 1) {
+            char ch = text.charAt(0);
+            return ch;
+        }
+        for (int i = 256 ; i < TYPES.size(); i++) {
+            TokenType tokenType = TYPES.get(i);
+            if (tokenType!=null && text.equals(tokenType.getText())) {
+                return i;
+            }
+        }
+        return IDENTIFIER;
+    }
+
     @Nonnull
     public static String getTokenName(@Nonnegative int type) {
         if (type < 0)
