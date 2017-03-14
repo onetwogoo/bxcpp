@@ -65,7 +65,7 @@ public class Backward {
             rightTokens = backResult.rightTokens;
             targetStates = backResult.targetStates;
             rightChanges = FList.concat(skippedChanges, FList.concat(backResult.originalChanges, restChanges));
-            System.out.println(i + " of " + actions.size());
+//            System.out.println(i + " of " + actions.size());
         }
 
 //        if (changes.size() == 2) {
@@ -130,10 +130,10 @@ public class Backward {
             int step = 0;
             for (; ; ) {
                 if (tokens != null) {
-                    System.out.println("Test step " + step + " env " + env + " rest " + tokens + " on\n" + targetStates);
+//                    System.out.println("Test step " + step + " env " + env + " rest " + tokens + " on\n" + targetStates);
                     if (targetStates.matches(env, tokens)) {
-                        System.out.println("steps=" + step);
-                        System.out.println();
+//                        System.out.println("steps=" + step);
+//                        System.out.println();
                         return true;
                     }
                 }

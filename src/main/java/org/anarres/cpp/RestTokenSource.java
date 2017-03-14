@@ -18,7 +18,7 @@ public class RestTokenSource extends Source {
     @Override
     public TokenS token() throws IOException, LexerException {
         if (rest.isEmpty()) {
-            return new TokenS(new Token(Token.EOF, -1, -1,""), Empty.bag());
+            return new TokenS(new Token(Token.EOF,null, -1, -1,""), Empty.bag());
         }
         TokenS tokenS = rest.cur;
         rest = rest.next;

@@ -26,7 +26,7 @@ import java.util.List;
 /* pp */ class FixedTokenSource extends Source {
 
     private static final Token EOF
-            = new Token(Token.EOF, "<ts-eof>");
+            = new Token(Token.EOF, null, -1, -1, "<ts-eof>");
 
     private final List<TokenS> tokens;
     private int idx;

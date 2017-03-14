@@ -31,34 +31,28 @@ public final class Token implements Serializable {
 
     // public static final int	EOF        = -1;
     private final int type;
+    private final String file;
     private int line;
     private int column;
     private final Object value;
     private final String text;
 
-    public Token(int type, int line, int column,
+    public Token(int type, String file, int line, int column,
             String text, Object value) {
         this.type = type;
+        this.file = file;
         this.line = line;
         this.column = column;
         this.text = text;
         this.value = value;
     }
 
-    public Token(int type, int line, int column, String text) {
-        this(type, line, column, text, null);
+    /* pp */ Token(int type, String file) {
+        this(type, file, -1, -1, TokenType.getTokenText(type));
     }
 
-    /* pp */ Token(int type, String text, Object value) {
-        this(type, -1, -1, text, value);
-    }
-
-    /* pp */ Token(int type, String text) {
-        this(type, text, null);
-    }
-
-    /* pp */ Token(int type) {
-        this(type, TokenType.getTokenText(type));
+    public Token(int type, String file, int line, int column, String text) {
+        this(type, file, line, column, text, null);
     }
 
     /**
@@ -128,6 +122,10 @@ public final class Token implements Serializable {
     // @CheckForNull    // Not useful to annotate, as we have usually checked the type before calling this.
     public Object getValue() {
         return value;
+    }
+
+    public String getFile() {
+        return file;
     }
 
     /**
@@ -231,5 +229,5 @@ public final class Token implements Serializable {
     public static final int INVALID = 300;
 
     /** The position-less space token. */
-    /* pp */ static final Token space = new Token(WHITESPACE, -1, -1, " ");
+    /* pp */ static final Token space = new Token(WHITESPACE,null,-1, -1, " ");
 }

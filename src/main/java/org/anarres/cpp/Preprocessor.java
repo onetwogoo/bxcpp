@@ -605,7 +605,7 @@ public class Preprocessor implements Closeable {
             /* We actually want 'did the nested source
              * contain a newline token', which isNumbered()
              * approximates. This is not perfect, but works. */
-            return new TokenS(line_token(t.getLine(), t.getName(), " 2"), Empty.bag());
+            return new TokenS(line_token(t.getPath(), t.getLine(), t.getName(), " 2"), Empty.bag());
         }
 
         return null;
@@ -619,16 +619,16 @@ public class Preprocessor implements Closeable {
     @Nonnull
     private TokenS next_source() {
         if (inputs.isEmpty())
-            return new TokenS(new Token(EOF), Empty.bag());
+            return new TokenS(new Token(EOF, null), Empty.bag());
         Source s = inputs.remove(0);
         push_source(s, true);
-        return new TokenS(line_token(s.getLine(), s.getName(), " 1"), Empty.bag());
+        return new TokenS(line_token(s.getPath(), s.getLine(), s.getName(), " 1"), Empty.bag());
     }
 
     /* XXX Make this include the NL, and make all cpp directives eat
      * their own NL. */
     @Nonnull
-    private Token line_token(int line, @CheckForNull String name, @Nonnull String extra) {
+    private Token line_token(String file, int line, @CheckForNull String name, @Nonnull String extra) {
         StringBuilder buf = new StringBuilder();
         buf.append("#line ").append(line)
                 .append(" \"");
@@ -638,7 +638,7 @@ public class Preprocessor implements Closeable {
         else
             MacroTokenSource.escape(buf, name);
         buf.append("\"").append(extra).append("\n");
-        return new Token(P_LINE, line, 0, buf.toString(), null);
+        return new Token(P_LINE, file, line, 0, buf.toString(), null);
     }
 
     @Nonnull
@@ -886,7 +886,7 @@ public class Preprocessor implements Closeable {
         if (m == __LINE__) {
             TokenS[] tokens = new TokenS[]{
                     new TokenS(
-                            new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(),
+                            new Token(NUMBER, orig.token.getFile(), orig.token.getLine(), orig.token.getColumn(),
                                     Integer.toString(orig.token.getLine()),
                                     new NumericValue(10, Integer.toString(orig.token.getLine()))),
                             HashTreePBag.from(disables))
@@ -917,7 +917,7 @@ public class Preprocessor implements Closeable {
 
             TokenS[] tokens = new TokenS[]{
                     new TokenS(
-                            new Token(STRING, orig.token.getLine(), orig.token.getColumn(), text, text),
+                            new Token(STRING, orig.token.getFile(), orig.token.getLine(), orig.token.getColumn(), text, text),
                             HashTreePBag.from(disables))
             };
             collector.replaceWithNewTokens(Arrays.asList(tokens[0].token), disables);
@@ -928,7 +928,7 @@ public class Preprocessor implements Closeable {
             int value = this.counter++;
             TokenS[] tokens = new TokenS[]{
                     new TokenS(
-                            new Token(NUMBER, orig.token.getLine(), orig.token.getColumn(), Integer.toString(value),
+                            new Token(NUMBER, orig.token.getFile(), orig.token.getLine(), orig.token.getColumn(), Integer.toString(value),
                                     new NumericValue(10, Integer.toString(value))),
                             HashTreePBag.from(disables))
             };
@@ -1108,7 +1108,7 @@ public class Preprocessor implements Closeable {
                 case PASTE:
                     space = false;
                     paste = true;
-                    m.addPaste(new Token(M_PASTE,
+                    m.addPaste(new Token(M_PASTE, tok.token.getFile(),
                             tok.token.getLine(), tok.token.getColumn(),
                             "#" + "#", null));
                     break;
@@ -1121,7 +1121,7 @@ public class Preprocessor implements Closeable {
                     TokenS la = source_token_nonwhite();
                     if (la.token.getType() == IDENTIFIER
                             && ((idx = args.indexOf(la.token.getText())) != -1)) {
-                        m.addToken(new Token(M_STRING,
+                        m.addToken(new Token(M_STRING, tok.token.getFile(),
                                 la.token.getLine(), la.token.getColumn(),
                                 "#" + la.token.getText(),
                                 Integer.valueOf(idx)));
@@ -1141,7 +1141,7 @@ public class Preprocessor implements Closeable {
                     if (idx == -1)
                         m.addToken(tok.token);
                     else
-                        m.addToken(new Token(M_ARG,
+                        m.addToken(new Token(M_ARG, tok.token.getFile(),
                                 tok.token.getLine(), tok.token.getColumn(),
                                 tok.token.getText(),
                                 Integer.valueOf(idx)));
@@ -1301,6 +1301,7 @@ public class Preprocessor implements Closeable {
         try {
             TokenS tok = token_nonwhite();
 
+            String file = tok.token.getFile();
             String name;
             boolean quoted;
 
@@ -1350,13 +1351,13 @@ public class Preprocessor implements Closeable {
 
             /* Do the inclusion. */
             List<Token> producedTokens = new ArrayList<>();
-            include(source.getPath(), tok.token.getLine(), name, quoted, next, producedTokens);
+            include(file, tok.token.getLine(), name, quoted, next, producedTokens);
             collector.replaceWithNewTokens(producedTokens, Empty.set());
 
             /* 'tok' is the 'nl' after the include. We use it after the
              * #line directive. */
             if (getFeature(Feature.LINEMARKERS))
-                return new TokenS(line_token(1, source.getName(), " 1"), Empty.bag());
+                return new TokenS(line_token(file, 1, source.getName(), " 1"), Empty.bag());
 
             // If a.h is x y z, it actually replaces #include <a.h>\n with \nx y z.
             // So we prepend the \n at the beginning of producedTokens
@@ -1375,11 +1376,13 @@ public class Preprocessor implements Closeable {
     protected void pragma_once(@Nonnull Token name)
             throws IOException, LexerException {
         Source s = this.source;
-        if (!onceseenpaths.add(s.getPath())) {
+        if (onceseenpaths.contains(s.getPath())) {
             TokenS mark = pop_source(true);
             // FixedTokenSource should never generate a linemarker on exit.
             if (mark != null)
                 push_source(new FixedTokenSource(Arrays.asList(mark)), true);
+        } else {
+            onceseenpaths = onceseenpaths.plus(s.getPath());
         }
     }
 
@@ -1556,17 +1559,17 @@ public class Preprocessor implements Closeable {
                     error(la.token,
                             "defined() needs identifier, not "
                             + la.token.getText());
-                    tok = new TokenS(new Token(NUMBER,
+                    tok = new TokenS(new Token(NUMBER, la.token.getFile(),
                             la.token.getLine(), la.token.getColumn(),
                             "0", new NumericValue(10, "0")), Empty.bag());
                 } else if (macros.containsKey(la.token.getText())) {
                     // System.out.println("Found macro");
-                    tok = new TokenS(new Token(NUMBER,
+                    tok = new TokenS(new Token(NUMBER, la.token.getFile(),
                             la.token.getLine(), la.token.getColumn(),
                             "1", new NumericValue(10, "1")), Empty.bag());
                 } else {
                     // System.out.println("Not found macro");
-                    tok = new TokenS(new Token(NUMBER,
+                    tok = new TokenS(new Token(NUMBER, la.token.getFile(),
                             la.token.getLine(), la.token.getColumn(),
                             "0", new NumericValue(10, "0")), Empty.bag());
                 }
@@ -1832,7 +1835,7 @@ public class Preprocessor implements Closeable {
 
         char[] cbuf = new char[nls];
         Arrays.fill(cbuf, '\n');
-        return new Token(WHITESPACE,
+        return new Token(WHITESPACE, tok.getFile(),
                 tok.getLine(), tok.getColumn(),
                 new String(cbuf));
     }

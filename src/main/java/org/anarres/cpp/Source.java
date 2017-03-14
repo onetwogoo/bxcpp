@@ -239,7 +239,7 @@ public abstract class Source implements Iterable<TokenS>, Closeable {
                     /* XXX Are we sure about this? */
                     warning(tok.token.getLine(), tok.token.getColumn(),
                             "No newline before end of file");
-                    return new TokenS(new Token(NL,
+                    return new TokenS(new Token(NL, tok.token.getFile(),
                             tok.token.getLine(), tok.token.getColumn(),
                             "\n"), tok.disables);
                 // return tok;

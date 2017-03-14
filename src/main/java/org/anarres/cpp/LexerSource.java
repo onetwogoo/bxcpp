@@ -274,7 +274,7 @@ public class LexerSource extends Source {
             d = read();
         }
         unread(d);
-        return new Token(INVALID, text.toString(), reason);
+        return new Token(INVALID, getPath(),-1, -1, text.toString(), reason);
     }
 
     @Nonnull
@@ -287,19 +287,19 @@ public class LexerSource extends Source {
             do {
                 d = read();
                 if (d == -1)
-                    return new Token(INVALID, text.toString(),
+                    return new Token(INVALID, getPath(),-1,-1,text.toString(),
                             "Unterminated comment");
                 text.append((char) d);
             } while (d != '*');
             do {
                 d = read();
                 if (d == -1)
-                    return new Token(INVALID, text.toString(),
+                    return new Token(INVALID, getPath(),-1,-1,text.toString(),
                             "Unterminated comment");
                 text.append((char) d);
             } while (d == '*');
         } while (d != '/');
-        return new Token(CCOMMENT, text.toString());
+        return new Token(CCOMMENT,getPath(),-1,-1, text.toString());
     }
 
     @Nonnull
@@ -313,7 +313,7 @@ public class LexerSource extends Source {
             d = read();
         }
         unread(d);
-        return new Token(CPPCOMMENT, text.toString());
+        return new Token(CPPCOMMENT,getPath(),-1,-1, text.toString());
     }
 
     /**
@@ -412,11 +412,11 @@ public class LexerSource extends Source {
             d = escape(text);
         } else if (isLineSeparator(d)) {
             unread(d);
-            return new Token(INVALID, text.toString(),
+            return new Token(INVALID,getPath(), -1,-1, text.toString(),
                     "Unterminated character literal");
         } else if (d == '\'') {
             text.append('\'');
-            return new Token(INVALID, text.toString(),
+            return new Token(INVALID, getPath(), -1,-1,text.toString(),
                     "Empty character literal");
         } else if (!Character.isDefined(d)) {
             text.append('?');
@@ -439,12 +439,12 @@ public class LexerSource extends Source {
                     break;
                 e = read();
             }
-            return new Token(INVALID, text.toString(),
+            return new Token(INVALID, getPath(), -1,-1,text.toString(),
                     "Illegal character constant " + text);
         }
         text.append('\'');
         /* XXX It this a bad cast? */
-        return new Token(CHARACTER,
+        return new Token(CHARACTER,getPath(), -1,-1,
                 text.toString(), Character.valueOf((char) d));
     }
 
@@ -470,12 +470,12 @@ public class LexerSource extends Source {
             } else if (c == -1) {
                 unread(c);
                 // error("End of file in string literal after " + buf);
-                return new Token(INVALID, text.toString(),
+                return new Token(INVALID, getPath(), -1,-1,text.toString(),
                         "End of file in string literal after " + buf);
             } else if (isLineSeparator(c)) {
                 unread(c);
                 // error("Unterminated string literal after " + buf);
-                return new Token(INVALID, text.toString(),
+                return new Token(INVALID, getPath(), -1,-1,text.toString(),
                         "Unterminated string literal after " + buf);
             } else {
                 text.append((char) c);
@@ -485,16 +485,16 @@ public class LexerSource extends Source {
         text.append(close);
         switch (close) {
             case '"':
-                return new Token(STRING,
+                return new Token(STRING,getPath(), -1,-1,
                         text.toString(), buf.toString());
             case '>':
-                return new Token(HEADER,
+                return new Token(HEADER,getPath(), -1,-1,
                         text.toString(), buf.toString());
             case '\'':
                 if (buf.length() == 1)
-                    return new Token(CHARACTER,
+                    return new Token(CHARACTER,getPath(), -1,-1,
                             text.toString(), buf.toString());
-                return new Token(SQSTRING,
+                return new Token(SQSTRING,getPath(), -1,-1,
                         text.toString(), buf.toString());
             default:
                 throw new IllegalStateException(
@@ -554,11 +554,11 @@ public class LexerSource extends Source {
                     d = read();
                 }
                 unread(d);
-                return new Token(INVALID, text.toString(), reason);
+                return new Token(INVALID, getPath(), -1,-1,text.toString(), reason);
             } else {
                 unread(d);
                 value.setFlags(flags);
-                return new Token(NUMBER,
+                return new Token(NUMBER,getPath(), -1,-1,
                         text.toString(), value);
             }
         }
@@ -732,7 +732,7 @@ public class LexerSource extends Source {
                 break;
         }
         unread(d);
-        return new Token(IDENTIFIER, text.toString());
+        return new Token(IDENTIFIER, getPath(), -1,-1,text.toString());
     }
 
     @Nonnull
@@ -753,7 +753,7 @@ public class LexerSource extends Source {
                 break;
         }
         unread(d);
-        return new Token(WHITESPACE, text.toString());
+        return new Token(WHITESPACE, getPath(), -1,-1,text.toString());
     }
 
     /* No token processed by cond() contains a newline. */
@@ -763,9 +763,9 @@ public class LexerSource extends Source {
             LexerException {
         int d = read();
         if (c == d)
-            return new Token(yes);
+            return new Token(yes, getPath());
         unread(d);
-        return new Token(no);
+        return new Token(no, getPath());
     }
 
     @Override
@@ -785,7 +785,7 @@ public class LexerSource extends Source {
                 if (ppvalid) {
                     bol = true;
                     if (include) {
-                        tok = new Token(NL, _l, _c, "\n");
+                        tok = new Token(NL, getPath(), _l, _c, "\n");
                     } else {
                         int nls = 0;
                         do {
@@ -797,7 +797,7 @@ public class LexerSource extends Source {
                         for (int i = 0; i < text.length; i++)
                             text[i] = '\n';
                         // Skip the bol = false below.
-                        tok = new Token(NL, _l, _c, new String(text));
+                        tok = new Token(NL, getPath(), _l, _c, new String(text));
                     }
                     if (DEBUG)
                         System.out.println("lx: Returning NL: " + tok);
@@ -812,7 +812,7 @@ public class LexerSource extends Source {
 
             case '#':
                 if (bol)
-                    tok = new Token(HASH);
+                    tok = new Token(HASH, getPath());
                 else
                     tok = cond('#', PASTE, '#');
                 break;
@@ -820,20 +820,20 @@ public class LexerSource extends Source {
             case '+':
                 d = read();
                 if (d == '+')
-                    tok = new Token(INC);
+                    tok = new Token(INC, getPath());
                 else if (d == '=')
-                    tok = new Token(PLUS_EQ);
+                    tok = new Token(PLUS_EQ, getPath());
                 else
                     unread(d);
                 break;
             case '-':
                 d = read();
                 if (d == '-')
-                    tok = new Token(DEC);
+                    tok = new Token(DEC, getPath());
                 else if (d == '=')
-                    tok = new Token(SUB_EQ);
+                    tok = new Token(SUB_EQ, getPath());
                 else if (d == '>')
-                    tok = new Token(ARROW);
+                    tok = new Token(ARROW, getPath());
                 else
                     unread(d);
                 break;
@@ -848,7 +848,7 @@ public class LexerSource extends Source {
                 else if (d == '/')
                     tok = cppcomment();
                 else if (d == '=')
-                    tok = new Token(DIV_EQ);
+                    tok = new Token(DIV_EQ, getPath());
                 else
                     unread(d);
                 break;
@@ -856,26 +856,26 @@ public class LexerSource extends Source {
             case '%':
                 d = read();
                 if (d == '=')
-                    tok = new Token(MOD_EQ);
+                    tok = new Token(MOD_EQ, getPath());
                 else if (digraphs && d == '>')
-                    tok = new Token('}');	// digraph
+                    tok = new Token('}', getPath());	// digraph
                 else if (digraphs && d == ':')
                     PASTE:
                     {
                         d = read();
                         if (d != '%') {
                             unread(d);
-                            tok = new Token('#');	// digraph
+                            tok = new Token('#', getPath());	// digraph
                             break PASTE;
                         }
                         d = read();
                         if (d != ':') {
                             unread(d);	// Unread 2 chars here.
                             unread('%');
-                            tok = new Token('#');	// digraph
+                            tok = new Token('#', getPath());	// digraph
                             break PASTE;
                         }
-                        tok = new Token(PASTE);	// digraph
+                        tok = new Token(PASTE, getPath());	// digraph
                     }
                 else
                     unread(d);
@@ -885,7 +885,7 @@ public class LexerSource extends Source {
                 /* :: */
                 d = read();
                 if (digraphs && d == '>')
-                    tok = new Token(']');	// digraph
+                    tok = new Token(']', getPath());	// digraph
                 else
                     unread(d);
                 break;
@@ -896,13 +896,13 @@ public class LexerSource extends Source {
                 } else {
                     d = read();
                     if (d == '=')
-                        tok = new Token(LE);
+                        tok = new Token(LE, getPath());
                     else if (d == '<')
                         tok = cond('=', LSH_EQ, LSH);
                     else if (digraphs && d == ':')
-                        tok = new Token('[');	// digraph
+                        tok = new Token('[', getPath());	// digraph
                     else if (digraphs && d == '%')
-                        tok = new Token('{');	// digraph
+                        tok = new Token('{', getPath());	// digraph
                     else
                         unread(d);
                 }
@@ -915,7 +915,7 @@ public class LexerSource extends Source {
             case '>':
                 d = read();
                 if (d == '=')
-                    tok = new Token(GE);
+                    tok = new Token(GE, getPath());
                 else if (d == '>')
                     tok = cond('=', RSH_EQ, RSH);
                 else
@@ -929,7 +929,7 @@ public class LexerSource extends Source {
             case '|':
                 d = read();
                 if (d == '=')
-                    tok = new Token(OR_EQ);
+                    tok = new Token(OR_EQ, getPath());
                 else if (d == '|')
                     tok = cond('=', LOR_EQ, LOR);
                 else
@@ -940,7 +940,7 @@ public class LexerSource extends Source {
                 if (d == '&')
                     tok = cond('=', LAND_EQ, LAND);
                 else if (d == '=')
-                    tok = new Token(AND_EQ);
+                    tok = new Token(AND_EQ, getPath());
                 else
                     unread(d);
                 break;
@@ -968,7 +968,7 @@ public class LexerSource extends Source {
 
             case -1:
                 close();
-                tok = new Token(EOF, _l, _c, "<eof>");
+                tok = new Token(EOF, getPath(), _l, _c, "<eof>");
                 break;
         }
 
@@ -981,7 +981,7 @@ public class LexerSource extends Source {
             } else if (Character.isJavaIdentifierStart(c)) {
                 tok = identifier(c);
             } else {
-                tok = new Token(c);
+                tok = new Token(c, getPath());
             }
         }
 

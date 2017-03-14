@@ -106,7 +106,7 @@ import static org.anarres.cpp.Token.*;
         escape(str, buf);
         str.append("\"");
         // System.out.println("Escape: " + buf + " -> " + str);
-        return new Token(STRING,
+        return new Token(STRING, pos.getFile(),
                 pos.getLine(), pos.getColumn(),
                 str.toString(), buf.toString());
     }
@@ -198,7 +198,7 @@ import static org.anarres.cpp.Token.*;
     @Override
     public TokenS token() {
         if (producedIndex >= produced.size())
-            return new TokenS(new Token(Token.EOF, -1, -1, ""), Empty.bag());
+            return new TokenS(new Token(Token.EOF, null, -1, -1, ""), Empty.bag());
         return produced.get(producedIndex++);
     }
 
@@ -220,7 +220,7 @@ import static org.anarres.cpp.Token.*;
             }
 
             if (!tokens.hasNext())
-                return new TokenS(new Token(EOF, -1, -1, ""), Empty.bag());	/* End of macro. */
+                return new TokenS(new Token(EOF,null, -1, -1, ""), Empty.bag());	/* End of macro. */
 
             Token tok = tokens.next();
             int idx;

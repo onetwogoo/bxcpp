@@ -110,6 +110,8 @@ public class Main {
     }
 
     static boolean checkIdentityChange(Result result) {
+        long startTime = System.currentTimeMillis();
+
         System.out.println("Checking identity change");
         Backward backward = new Backward(result.preprocessor);
         PVector<PSequence<TokenS>> changes = Empty.vector();
@@ -130,6 +132,7 @@ public class Main {
             System.out.println("Got     :" + orignalChanges);
             return false;
         }
+        System.out.println("kakaru: " + (System.currentTimeMillis() - startTime));
         return true;
     }
 
