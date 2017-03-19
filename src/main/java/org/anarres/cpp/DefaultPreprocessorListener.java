@@ -70,8 +70,10 @@ public class DefaultPreprocessorListener implements PreprocessorListener {
             String msg)
             throws LexerException {
         warnings++;
-        print(source.getName() + ":" + line + ":" + column
-                + ": warning: " + msg);
+        if (source != null) {
+            print(source.getName() + ":" + line + ":" + column
+                    + ": warning: " + msg);
+        }
     }
 
     /**

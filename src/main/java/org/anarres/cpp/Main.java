@@ -73,7 +73,7 @@ public class Main {
         }
     }
 
-    public static void main(String[] args) throws Exception {
+    private static void testBackward() throws Exception {
         TestCase[] testCases = new TestCase[]{
                 new TestCase(
                         "#define xy x y\n" +
@@ -398,15 +398,17 @@ public class Main {
                 }
             }
         }
+    }
 
-//        Result result = preprocess(args, null);
+    public static void main(String[] args) throws Exception {
+        Result result = preprocess(args, null);
 //        System.out.printf("original: %s\n", result.original);
 //        System.out.printf("produced: %s\n", result.produced);
 //        System.out.printf("actions: %s\n", result.actions);
-//        FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
+        FileUtils.writeStringToFile(new File("/Users/kaoet/Desktop/actions.txt"), result.actions.toString());
 
-//        if (!checkSelfConsistency(result)) return;
-//        if (!checkIdentityChange(result)) return;
+        if (!checkSelfConsistency(result)) return;
+        if (!checkIdentityChange(result)) return;
 
 //        PrintStream writer = new PrintStream("/Users/kaoet/Desktop/playback.txt");
 //        result.preprocessor.setCurrentState(result.actions.get(0).beforeEnv, ConsPStack.from(result.original));
@@ -434,15 +436,15 @@ public class Main {
             TokenS exp = replayed.get(i);
             TokenS act = result.produced.get(i);
             if (!exp.equals(act)) {
-                System.out.println("Replayed " + exp + " produced " + act);
+                System.err.println("Replayed " + exp + " produced " + act);
                 return false;
             }
         }
         if (replayed.size() > result.produced.size()) {
-            System.out.println("More tokens in replayed");
+            System.err.println("More tokens in replayed");
             return false;
         } else if (replayed.size() < result.produced.size()) {
-            System.out.println("More tokens in produced");
+            System.err.println("More tokens in produced");
             return false;
         }
         return true;
@@ -488,6 +490,7 @@ public class Main {
                 for (TokenS actual : replace.original) {
                     TokenS expected = input.removeFirst();
                     if (!expected.equals(actual)) {
+                        System.err.println("At " + expected.token.getFile());
                         throw new RuntimeException("Expected " + expected + " old " + actual + " instead\n" + replace.toJson());
                     }
                 }

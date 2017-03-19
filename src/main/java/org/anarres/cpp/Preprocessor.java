@@ -675,7 +675,7 @@ public class Preprocessor implements Closeable {
             }
             if (getFeature(Feature.DEBUG))
                 LOG.debug("Returning fresh token " + tok);
-            collector.getToken(tok, getSource());
+            collector.getToken(tok, s);
             return tok;
         }
     }
@@ -703,27 +703,44 @@ public class Preprocessor implements Closeable {
     }
 
     /**
-     * Returns an NL or an EOF token.
+     * Skips tokens until the end of line.
      *
-     * The metadata on the token will be correct, which is better
-     * than generating a new one.
-     *
-     * This method can, as of recent patches, return a P_LINE token.
+     * @param white true if only whitespace is permitted on the
+     *	remainder of the line.
+     * @return the NL token.
      */
+    @Nonnull
     private TokenS source_skipline(boolean white)
             throws IOException,
             LexerException {
-        // (new Exception("skipping line")).printStackTrace(System.out);
-        Source s = getSource();
-        TokenS tok = s.skipline(white, this);
-        /* XXX Refactor with source_token() */
-        if (tok.token.getType() == EOF && s.isAutopop()) {
-            // System.out.println("Autopop " + s);
-            TokenS mark = pop_source(true);
-            if (mark != null)
-                return mark;
+        for (;;) {
+            TokenS tok = source_token();
+            switch (tok.token.getType()) {
+                case EOF:
+                    /* There ought to be a newline before EOF.
+                     * At least, in any skipline context. */
+                    /* XXX Are we sure about this? */
+                    warning(tok.token.getLine(), tok.token.getColumn(),
+                            "No newline before end of file");
+                    return new TokenS(new Token(NL, tok.token.getFile(),
+                            tok.token.getLine(), tok.token.getColumn(),
+                            "\n"), tok.disables);
+                // return tok;
+                case NL:
+                    /* This may contain one or more newlines. */
+                    return tok;
+                case CCOMMENT:
+                case CPPCOMMENT:
+                case WHITESPACE:
+                    break;
+                default:
+                    /* XXX Check white, if required. */
+                    if (white)
+                        warning(tok.token.getLine(), tok.token.getColumn(),
+                                "Unexpected nonwhite token");
+                    break;
+            }
         }
-        return tok;
     }
 
     /* processes and expands a macro. */
@@ -895,7 +912,7 @@ public class Preprocessor implements Closeable {
             push_source(new FixedTokenSource(tokens), true);
         } else if (m == __FILE__) {
             StringBuilder buf = new StringBuilder("\"");
-            String name = getSource().getName();
+            String name = orig.token.getFile();
             if (name == null)
                 name = "<no file>";
             for (int i = 0; i < name.length(); i++) {
@@ -964,20 +981,22 @@ public class Preprocessor implements Closeable {
             switch (tok.token.getType()) {
                 case EOF:
                     break EXPANSION;
-
+/*
                 case WHITESPACE:
                 case CCOMMENT:
                 case CPPCOMMENT:
                     space = tok;
                     deleteSpaceActionIndex = collector.delete();
                     break;
-
+*/
                 default:
+                    /*
                     if (space != null && !expansion.isEmpty()) {
                         expansion.add(space);
                         final TokenS finalSpace = space;
                         collector.revert(deleteSpaceActionIndex, action -> new Skip(action.beforeEnv, finalSpace));
                     }
+                    */
                     expansion.add(tok);
                     space = null;
                     collector.skipLast();
@@ -1299,7 +1318,10 @@ public class Preprocessor implements Closeable {
             lexer.setInclude(true);
         }
         try {
+            if (collectOnly) throw new Error("Nested collect only");
+            collectOnly = true;
             TokenS tok = token_nonwhite();
+            collectOnly = false;
 
             String file = tok.token.getFile();
             String name;
@@ -1311,7 +1333,10 @@ public class Preprocessor implements Closeable {
                 StringBuilder buf = new StringBuilder((String) tok.token.getValue());
                 HEADER:
                 for (;;) {
+                    if (collectOnly) throw new Error("Nested collect only");
+                    collectOnly = true;
                     tok = token_nonwhite();
+                    collectOnly = false;
                     switch (tok.token.getType()) {
                         case STRING:
                             buf.append((String) tok.token.getValue());
@@ -1332,7 +1357,10 @@ public class Preprocessor implements Closeable {
             } else if (tok.token.getType() == HEADER) {
                 name = (String) tok.token.getValue();
                 quoted = false;
+                if (collectOnly) throw new Error("Nested collect only");
+                collectOnly = true;
                 tok = source_skipline(true);
+                collectOnly = false;
             } else {
                 error(tok.token,
                         "Expected string or header, not " + tok.token.getText());
@@ -1342,8 +1370,11 @@ public class Preprocessor implements Closeable {
                         collector.skipLast();
                         return tok;
                     default:
+                        if (collectOnly) throw new Error("Nested collect only");
+                        collectOnly = true;
                         /* Only if not a NL or EOF already. */
                         TokenS ret = source_skipline(false);
+                        collectOnly = false;
                         collector.skipLast();
                         return ret;
                 }
@@ -2113,14 +2144,15 @@ public class Preprocessor implements Closeable {
                             expr_token = null;
                             collectOnly = true;
                             states = states.with(0, states.get(0).withActive(expr(0) != 0));
-                            collectOnly = false;
                             tok = expr_token();	/* unget */
 
                             if (tok.token.getType() == NL) {
+                                collectOnly = false;
                                 collector.skipLast();
                                 return tok;
                             } else {
                                 TokenS ret = source_skipline(true);
+                                collectOnly = false;
                                 collector.skipLast();
                                 return ret;
                             }
@@ -2155,14 +2187,15 @@ public class Preprocessor implements Closeable {
                                 expr_token = null;
                                 collectOnly = true;
                                 states = states.with(0, state.withActive(expr(0) != 0));
-                                collectOnly = false;
                                 tok = expr_token();	/* unget */
 
                                 if (tok.token.getType() == NL) {
+                                    collectOnly = false;
                                     collector.skipLast();
                                     return tok;
                                 }
                                 TokenS ret = source_skipline(true);
+                                collectOnly = false;
                                 collector.skipLast();
                                 return ret;
                             }
@@ -2288,13 +2321,10 @@ public class Preprocessor implements Closeable {
     private TokenS token_nonwhite()
             throws IOException,
             LexerException {
-        if (collectOnly) throw new Error("Nested collect only");
-        collectOnly = true;
         TokenS tok;
         do {
             tok = _token();
         } while (isWhite(tok.token));
-        collectOnly = false;
         return tok;
     }
 

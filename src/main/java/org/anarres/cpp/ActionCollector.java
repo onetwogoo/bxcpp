@@ -12,7 +12,6 @@ public class ActionCollector{
     public void getToken(TokenS token, Source source){}
     public void ungetToken(TokenS token, Source source){}
     public void directInsert(Action action){}
-    public void revert(int index, Function<Action, Action> replaceFn){}
     public void skipLast(){}
     public int numToken() {return 0;}
     public int delete(){ return -1; }
@@ -38,7 +37,7 @@ class ActionCollectorImpl extends ActionCollector {
     public void getToken(TokenS token, Source source) {
         if (token.token.getType() == Token.P_LINE || token.token.getType() == Token.EOF)
             return;
-        if (pp.collectOnly && source instanceof MacroTokenSource) return;
+        if (pp.collectOnly && (source instanceof MacroTokenSource || source instanceof FixedTokenSource)) return;
         if (isRootSource(source)) {
             original.add(token);
         }
@@ -46,9 +45,11 @@ class ActionCollectorImpl extends ActionCollector {
     }
 
     public void ungetToken(TokenS token, Source source) {
+        if (token.token.getType() == Token.P_LINE || token.token.getType() == Token.EOF)
+            return;
         if (token.token != currentTokens.get(currentTokens.size() - 1).token)
             throw new Error("Unget expected " + token + " got " + currentTokens.get(currentTokens.size() - 1).token);
-        if (pp.collectOnly && source instanceof MacroTokenSource) return;
+        if (pp.collectOnly && (source instanceof MacroTokenSource || source instanceof FixedTokenSource)) return;
         if (isRootSource(source)) {
             original.remove(original.size() - 1);
         }
@@ -72,11 +73,6 @@ class ActionCollectorImpl extends ActionCollector {
         if (pp.collectOnly) return;
         actions.add(action);
         environment = pp.getCurrentState(environment);
-    }
-
-    public void revert(int index, Function<Action, Action> replaceFn) {
-        if (pp.collectOnly) return;
-        actions.set(index, replaceFn.apply(actions.get(index)));
     }
 
     /**

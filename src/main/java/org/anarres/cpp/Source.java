@@ -218,47 +218,6 @@ public abstract class Source implements Iterable<TokenS>, Closeable {
         return new SourceIterator(this);
     }
 
-    /**
-     * Skips tokens until the end of line.
-     *
-     * @param white true if only whitespace is permitted on the
-     *	remainder of the line.
-     * @return the NL token.
-     */
-    @Nonnull
-    public TokenS skipline(boolean white, Preprocessor pp)
-            throws IOException,
-            LexerException {
-        for (;;) {
-            TokenS tok = token();
-            pp.collector.getToken(tok, this);
-            switch (tok.token.getType()) {
-                case EOF:
-                    /* There ought to be a newline before EOF.
-                     * At least, in any skipline context. */
-                    /* XXX Are we sure about this? */
-                    warning(tok.token.getLine(), tok.token.getColumn(),
-                            "No newline before end of file");
-                    return new TokenS(new Token(NL, tok.token.getFile(),
-                            tok.token.getLine(), tok.token.getColumn(),
-                            "\n"), tok.disables);
-                // return tok;
-                case NL:
-                    /* This may contain one or more newlines. */
-                    return tok;
-                case CCOMMENT:
-                case CPPCOMMENT:
-                case WHITESPACE:
-                    break;
-                default:
-                    /* XXX Check white, if required. */
-                    if (white)
-                        warning(tok.token.getLine(), tok.token.getColumn(),
-                                "Unexpected nonwhite token");
-                    break;
-            }
-        }
-    }
 
     protected void error(int line, int column, String msg)
             throws LexerException {
